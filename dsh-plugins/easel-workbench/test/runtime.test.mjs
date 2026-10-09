@@ -20,6 +20,8 @@ import {
   locateExecutable,
   pathCandidates,
   probeRuntime,
+  userBinCandidates,
+  userBinDirs,
 } from "../lib/host/runtime.js";
 import { runtimeFfmpeg, venvPython } from "../lib/host/config.js";
 
@@ -221,6 +223,17 @@ describe("locateExecutable", () => {
 });
 
 describe("probeRuntime", () => {
+  /**
+   * 探测时把「用户态目录」固定到测试临时区。
+   *
+   * 探测范围**有意**包含 `~/.local/bin`（`pip install --user`、pipx、自建运行时软链都
+   * 落在那里而它默认不在 PATH 上）；若不覆盖 `home`，本机真实存在的
+   * `~/.local/bin/python3.12` 会让「缺运行时」这类用例在开发机上假失败。
+   */
+  function probeIn(dir, options = {}) {
+    return probeRuntime({ home: join(dir, "no-such-home"), ...options });
+  }
+
   it("优先用 <runtimeDir>/venv 与 <runtimeDir>/ffmpeg，并回报版本", async () => {
     const dir = await makeScratch();
     const runtimeDir = join(dir, ".runtime");
@@ -232,7 +245,7 @@ describe("probeRuntime", () => {
     });
 
     const probed = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({ runtime: { runtimeDir, easelRoot: dir }, subprocess }),
+      probeIn(dir, { runtime: { runtimeDir, easelRoot: dir }, subprocess }),
     );
 
     assert.equal(probed.python.path, pythonPath);
@@ -263,7 +276,7 @@ describe("probeRuntime", () => {
     const subprocess = fakeSubprocess({});
 
     const probed = await withPath(bin, () =>
-      probeRuntime({ runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir }, subprocess }),
+      probeIn(dir, { runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir }, subprocess }),
     );
 
     assert.equal(probed.python.path, pythonPath);
@@ -280,7 +293,7 @@ describe("probeRuntime", () => {
     const subprocess = fakeSubprocess({ [pythonPath]: { stdout: "Python 3.12.15\n" } });
 
     const probed = await withPath(bin, () =>
-      probeRuntime({ runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir }, subprocess }),
+      probeIn(dir, { runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir }, subprocess }),
     );
 
     assert.equal(probed.python.path, pythonPath);
@@ -295,7 +308,7 @@ describe("probeRuntime", () => {
   it("缺运行时只降级不抛错（D8），且 ready 如实为假", async () => {
     const dir = await makeScratch();
     const probed = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({ runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir } }),
+      probeIn(dir, { runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir } }),
     );
     assert.equal(probed.python.ok, false);
     assert.equal(probed.python.path, undefined);
@@ -309,7 +322,7 @@ describe("probeRuntime", () => {
     const runtimeDir = join(dir, ".runtime");
     const pythonPath = await makeExecutable(venvPython(runtimeDir));
     const probed = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({ runtime: { runtimeDir, easelRoot: dir }, subprocess: undefined }),
+      probeIn(dir, { runtime: { runtimeDir, easelRoot: dir }, subprocess: undefined }),
     );
     assert.equal(probed.python.ok, true);
     assert.equal(probed.python.version, undefined);
@@ -325,7 +338,7 @@ describe("probeRuntime", () => {
     const subprocess = fakeSubprocess({ [explicit]: { stdout: "Python 3.11.9\n" } });
 
     const configured = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({
+      probeIn(dir, {
         runtime: { runtimeDir, easelRoot: dir, pythonExecutable: explicit },
         subprocess,
       }),
@@ -335,7 +348,7 @@ describe("probeRuntime", () => {
     assert.equal(configured.python.version, "Python 3.11.9");
 
     const broken = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({
+      probeIn(dir, {
         runtime: { runtimeDir, easelRoot: dir, pythonExecutable: join(dir, "typo") },
         subprocess,
       }),
@@ -350,9 +363,71 @@ describe("probeRuntime", () => {
     const runtimeDir = join(dir, ".runtime");
     const venvPath = await makeExecutable(venvPython(runtimeDir));
     const probed = await withPath(join(dir, "empty-path"), () =>
-      probeRuntime({ runtime: { easelRoot: dir } }),
+      probeIn(dir, { runtime: { easelRoot: dir } }),
     );
     assert.equal(probed.runtimeDir, null);
     assert.ok(!probed.python.searched.includes(venvPath));
+  });
+
+  it("PATH 上都没有时，回退到用户态目录 ~/.local/bin（source=user-bin）", async () => {
+    const dir = await makeScratch();
+    const home = join(dir, "home");
+    const pythonPath = await makeExecutable(join(home, ".local", "bin", "python3.12"));
+    const ffmpegPath = await makeExecutable(join(home, ".local", "bin", "ffmpeg"));
+    const subprocess = fakeSubprocess({
+      [pythonPath]: { stdout: "Python 3.12.15\n" },
+      [ffmpegPath]: { stdout: "ffmpeg version 6.1.1\n" },
+    });
+
+    const probed = await withPath(join(dir, "empty-path"), () =>
+      probeRuntime({
+        home,
+        runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir },
+        subprocess,
+      }),
+    );
+
+    assert.equal(probed.python.path, pythonPath);
+    assert.equal(probed.python.source, "user-bin");
+    assert.equal(probed.python.ok, true);
+    assert.equal(probed.ffmpeg.path, ffmpegPath);
+    assert.equal(probed.ffmpeg.source, "user-bin");
+    assert.equal(probed.ready, true);
+    // 探测痕迹里带版本号的名字出现在用户态目录展开的候选里。
+    assert.ok(userBinCandidates(PYTHON_VERSIONED_NAMES, home).includes(pythonPath));
+  });
+
+  it("PATH 命中优先于用户态目录（source 区分来源）", async () => {
+    const dir = await makeScratch();
+    const home = join(dir, "home");
+    const bin = join(dir, "bin");
+    const pathPython = await makeExecutable(join(bin, "python3"));
+    await makeExecutable(join(home, ".local", "bin", "python3.12"));
+
+    const probed = await withPath(bin, () =>
+      probeRuntime({
+        home,
+        runtime: { runtimeDir: join(dir, "empty-runtime"), easelRoot: dir },
+        subprocess: fakeSubprocess({}),
+      }),
+    );
+
+    assert.equal(probed.python.path, pathPython);
+    assert.equal(probed.python.source, "path");
+  });
+});
+
+describe("用户态可执行目录", () => {
+  it("userBinDirs 只给出 ~/.local/bin；userBinCandidates 按名字展开", () => {
+    const home = "/home/tester";
+    assert.deepEqual(userBinDirs(home), [join(home, ".local", "bin")]);
+    assert.deepEqual(userBinCandidates(["python3"], home), [join(home, ".local", "bin", "python3")]);
+    assert.deepEqual(userBinCandidates(FFMPEG_NAMES, home), [join(home, ".local", "bin", "ffmpeg")]);
+  });
+
+  it("pathCandidates 仍然只吃 PATH，不掺入用户态目录", () => {
+    const home = "/home/tester";
+    assert.deepEqual(pathCandidates(["python3"], "/opt/bin"), ["/opt/bin/python3"]);
+    assert.ok(!pathCandidates(["python3"], "/opt/bin").includes(join(home, ".local", "bin", "python3")));
   });
 });

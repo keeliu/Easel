@@ -9,6 +9,7 @@
  */
 
 import { access, constants } from "node:fs/promises";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { runtimeFfmpeg, venvPython } from "./config.js";
 import { runCommand } from "./exec.js";
@@ -50,6 +51,24 @@ export function pathCandidates(names, pathValue = process.env.PATH ?? "") {
   const dirs = pathValue.split(delimiter).filter((entry) => entry !== "");
   const out = [];
   for (const name of names) for (const dir of dirs) out.push(join(dir, name));
+  return out;
+}
+
+/**
+ * 用户态可执行目录。
+ *
+ * `pip install --user`、pipx、以及「把自建解释器软链到 ~/.local/bin」这类安装方式
+ * 都会把解释器放在这里，而该目录**默认不在 PATH 上**：只扫 PATH 会得出「没有 Python」
+ * 的错误结论（实测：本机 `~/.local/bin/python3.12` 可用，但 PATH 里没有它）。
+ */
+export function userBinDirs(home = homedir()) {
+  return [join(home, ".local", "bin")];
+}
+
+/** 只在用户态目录里展开候选；`source` 用 `user-bin` 与 PATH 命中区分，便于排查。 */
+export function userBinCandidates(names, home = homedir()) {
+  const out = [];
+  for (const name of names) for (const dir of userBinDirs(home)) out.push(join(dir, name));
   return out;
 }
 
@@ -98,23 +117,26 @@ async function probeVersion(subprocess, argv, cwd) {
  * @param {{ runtime: Record<string, any>, subprocess?: object }} deps
  */
 export async function probeRuntime(deps) {
-  const { runtime, subprocess } = deps;
+  const { runtime, subprocess, home = homedir() } = deps;
   const cwd = runtime.easelRoot ?? process.cwd();
 
   const runtimeDir = runtime.runtimeDir;
+  const pythonNames = [...PYTHON_NAMES, ...PYTHON_VERSIONED_NAMES];
   const pythonCandidates = [];
   if (typeof runtimeDir === "string") {
     pythonCandidates.push({ path: venvPython(runtimeDir), source: "runtime-venv" });
   }
-  for (const path of pathCandidates([...PYTHON_NAMES, ...PYTHON_VERSIONED_NAMES])) {
-    pythonCandidates.push({ path, source: "path" });
-  }
+  for (const path of pathCandidates(pythonNames)) pythonCandidates.push({ path, source: "path" });
+  for (const path of userBinCandidates(pythonNames, home)) pythonCandidates.push({ path, source: "user-bin" });
 
   const ffmpegCandidates = [];
   if (typeof runtimeDir === "string") {
     ffmpegCandidates.push({ path: runtimeFfmpeg(runtimeDir), source: "runtime-dir" });
   }
   for (const path of pathCandidates(FFMPEG_NAMES)) ffmpegCandidates.push({ path, source: "path" });
+  for (const path of userBinCandidates(FFMPEG_NAMES, home)) {
+    ffmpegCandidates.push({ path, source: "user-bin" });
+  }
 
   const python = await locateExecutable({
     configured: runtime.pythonExecutable,

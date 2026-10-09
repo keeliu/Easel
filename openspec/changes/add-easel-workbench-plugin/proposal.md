@@ -17,6 +17,7 @@ Easel 真正不可替代的资产是 114 个内容技能、约 50 个共享媒�
 - **删除** `easel/` CLI 包、`openclaw/` 配置与 `setup.sh`/`setup.ps1` 的安装编排；保留并以受控运行时方式替代其依赖安装职责。
 - **保留** `skills/` 下的技能与 Python 脚本、`profiles/` 下的画像目录、`outputs/` 下的产物结构，以及 `SOUL.md`/`AGENTS.md` 的文本资产。
 - **收敛** Easel 前端的 15 个页面级组件为：删除会话、消息、提问卡片、主题切换、技能浏览与模型设置组件；其余业务页面重写为工作台面板内的子导航页面。
+- **新增** bundle 的打包与激活契约：宿主运行时包只以 `peerDependencies` 声明、以物化方式安装到 profile、安装后以「宿主接口可达」作为激活验收判据（安装实测发现源码树 `link:` 会让宿主半边导入失败）。
 
 ## Capabilities
 
@@ -29,6 +30,7 @@ Easel 真正不可替代的资产是 114 个内容技能、约 50 个共享媒�
 - `creator-asset-library`: 创作者数据的读写——六维账号画像、内容库产物与素材附件，数据仍落在 Easel 既有的仓库目录结构中，且对上游仓库保持只读。
 - `creator-planning`: 创作计划与线索——排期复用 DSH 排期能力，选题库与热点线索作为可查的创作输入。
 - `platform-publishing`: 面向七个平台的账号、发布与归因——登录态可见并以用户重新授权方式获取凭据、经既有 Python 脚本执行发布、发布前强制通过确定性安全门禁且不提供绕过开关。
+- `workbench-bundle-packaging`: bundle 的打包与安装激活契约——宿主运行时包以 peer 依赖声明、安装必须物化为 profile 可解析的形式（源码树 `link:` 只作开发态且须自带 `node_modules`）、激活以宿主接口 `GET /easel-workbench/api/config` 返回 200 为验收判据。
 
 ### Modified Capabilities
 
@@ -53,6 +55,7 @@ Easel 真正不可替代的资产是 114 个内容技能、约 50 个共享媒�
 
 - **前置（阻断性）**：本机当前不存在任何 Python 运行时（`python`/`python3`/`pip`/`uv`/`uvx`）与 `ffmpeg`，而 Easel 技能层全部以 `python3 xxx.py` 形式调用。必须先建立受控 Python 运行时与 `ffmpeg`，否则技能脚本不可执行。
 - **DSH 插件包**：依赖 `dsh-skill`、`dsh-skill-filesystem`、`dsh-tool-skill`、`dsh-agent-preset`、`dsh-agent-preset-registry`、`dsh-persona`、`dsh-agent-default-model`、`dsh-schedule`。其中 `dsh-skill-filesystem` 在本机 profile 中当前处于 inactive 状态。
+- **bundle 打包约束**：本插件自身不持有宿主内部包——`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/cordis` 只用 `peerDependencies` 声明，安装由 profile 的包管理器完成；profile 侧的供应链策略（`minimumReleaseAge`）与安装方式（物化 vs 源码树 `link:`）会影响能否激活，须按 `workbench-bundle-packaging` 的验收判据确认。
 - **DSH 能力契约**：`sidebar.panellist`、`main`（keyed）、`ctx.layout`、`ctx.uiWorkspace`、`ctx.agents`、`ctx.agentDefaultModel`、`ctx.workspaceFiles`、`ctx.attachments`、`ctx.subprocess`。
 
 **不受影响**

@@ -30,6 +30,7 @@
   "common.unknown": "未知",
   "boundary.title": "这个区域暂时不可用",
   "boundary.detail": "错误信息：{message}",
+  "error.hostNotMounted": "宿主服务未挂载：请重载或重启 DSH 后重试。",
   "overview.profiles": "画像",
   "overview.artifacts": "内容产物",
   "overview.accounts": "已登录账号",

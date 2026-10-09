@@ -15,6 +15,25 @@ import test from "node:test";
 // 脚本随包发布（`install_bundle` 之后仍在包内），路径相对本测试文件。
 const SCRIPT = fileURLToPath(new URL("../scripts/bootstrap-runtime.sh", import.meta.url));
 const EASEL_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+
+/**
+ * 脚本默认的 `--easel-root`。
+ *
+ * 与 `scripts/bootstrap-runtime.sh` 的 `default_easel_root` 同源：优先 `<包>/../..` 下的
+ * `_repo`（工作区形态），否则 `<包>/../..` 自己就是检出（直接克隆形态）。
+ * 本测试文件在两处形态下都会被跑到（开发副本与 `_repo` 内副本），所以不能把
+ * `<包>/../..` 直接当成工作区根。
+ */
+function defaultEaselRoot() {
+  const workspace = fileURLToPath(new URL("../../..", import.meta.url));
+  if (existsSync(join(workspace, "_repo", "pyproject.toml"))) return join(workspace, "_repo");
+  if (existsSync(join(workspace, "pyproject.toml")) && existsSync(join(workspace, "skills", "openclaw"))) {
+    return workspace;
+  }
+  return join(workspace, "_repo");
+}
+
+const DEFAULT_EASEL_ROOT = defaultEaselRoot();
 const SCRIPT_SOURCE = readFileSync(SCRIPT, "utf8");
 
 // /tmp 是 noexec，任何要执行的夹具都得放在 .tooling/tmp 下（本文件只造空目录，仍沿用同一约定）。
@@ -78,7 +97,7 @@ test("脚本语法与 --help", async (t) => {
   // 脚本随包发布：默认值必须由「脚本自身所在位置」推出，与进程工作目录无关。
   const packageDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(text.includes(join(packageDir, ".runtime")), `--runtime-dir 默认应为 ${packageDir}/.runtime`);
-  assert.ok(text.includes(join(EASEL_ROOT, "_repo")), `--easel-root 默认应为 ${EASEL_ROOT}/_repo`);
+  assert.ok(text.includes(DEFAULT_EASEL_ROOT), `--easel-root 默认应为 ${DEFAULT_EASEL_ROOT}`);
 });
 
 test("脚本从任意工作目录运行都能定位到包与检出（随包形态）", async (t) => {
@@ -89,8 +108,8 @@ test("脚本从任意工作目录运行都能定位到包与检出（随包形�
   const fromTmp = run(["--help"], { cwd: SCRATCH_ROOT });
   assert.equal(fromTmp.status, 0);
   assert.ok(
-    `${fromTmp.stdout}${fromTmp.stderr}`.includes(join(EASEL_ROOT, "_repo")),
-    "从别的工作目录运行时应仍指向工作区下的 _repo",
+    `${fromTmp.stdout}${fromTmp.stderr}`.includes(DEFAULT_EASEL_ROOT),
+    `从别的工作目录运行时应仍指向默认检出 ${DEFAULT_EASEL_ROOT}`,
   );
 });
 
@@ -163,7 +182,7 @@ test("--dry-run 不写任何文件", async (t) => {
       "--runtime-dir",
       runtimeDir,
       "--easel-root",
-      join(EASEL_ROOT, "_repo"),
+      DEFAULT_EASEL_ROOT,
       "--groups",
       "core",
       "--dry-run",

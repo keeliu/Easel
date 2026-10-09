@@ -462,6 +462,36 @@ test("排期条目能给「打开会话」入口，并走 uiWorkspace.openSessio
   await view.unmount();
 });
 
+test("宿主半边未挂载（404 + 空响应体）时给可操作的提示，而不是裸的状态码", async () => {
+  // 插件自己的 404 一定带 {ok:false,code:"not-found",message}；解析不出 JSON 的 404
+  // 只可能是 DSH 自己的默认 404 —— 也就是宿主半边没挂载（design D14/D13）。
+  const fetchImpl = async () => ({
+    status: 404,
+    json: async () => {
+      throw new Error("Unexpected end of JSON input");
+    },
+  });
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  await flush();
+
+  const text = view.container.textContent;
+  assert.match(text, /宿主服务未挂载/, "404 且解析不出 JSON 时应当给可操作提示：" + text);
+  assert.doesNotMatch(text, /HTTP 404/, "不该把裸状态码摊给用户：" + text);
+
+  const failed = view.container.querySelectorAll('[data-easel-state="error"]');
+  assert.ok(failed.length > 0, "区域应当进入错误状态");
+  for (const node of failed) {
+    assert.ok(node.querySelector("[data-easel-retry]") !== null, "错误状态必须留下重试入口");
+  }
+
+  await view.unmount();
+});
+
 test("产物静态约束：无 iframe、无 DSH 客户端包依赖、无硬编码色值", async () => {
   assert.equal(/iframe/i.test(bundleSource), false, "不得使用 iframe");
   assert.doesNotMatch(bundleSource, /require\(\s*["']@deepseek-ai\//, "不得 require DSH 客户端包");

@@ -85,3 +85,17 @@ Easel 技能通过外部 Python 解释器与 `ffmpeg` 执行，系统 SHALL 能�
 
 - **WHEN** 外部 Python 解释器与 `ffmpeg` 均不存在
 - **THEN** 侧边栏入口与工作台面板仍可正常打开与关闭，不出现渲染失败
+
+### Requirement: 缺失项必须给出可执行的下一步
+
+运行时探测 SHALL 覆盖**用户态可执行目录**（`~/.local/bin`），而不只扫描 `PATH`：`pip install --user`、pipx 与「把自建解释器软链到用户目录」都不修改 `PATH`。自检结果的每一条非 `ok` 条目 SHALL 携带一段可执行的 `hint`（要运行的具体命令或要改的具体配置键），`ok` 条目 MUST NOT 携带 `hint`。
+
+#### Scenario: 解释器只在用户态目录里
+
+- **WHEN** `PATH` 上没有解释器，但 `~/.local/bin/python3.x` 可执行
+- **THEN** 自检把 Python 报为可用，并标明该结论来自用户态目录（与 `PATH` 命中区分）
+
+#### Scenario: 缺失条目自带下一步
+
+- **WHEN** 自检报出 Python 或 `ffmpeg` 缺失
+- **THEN** 对应条目带一段 `hint`，指明要运行的具体命令或要改的具体配置键，而不是只说明「未找到」

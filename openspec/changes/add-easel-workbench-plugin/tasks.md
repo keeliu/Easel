@@ -76,11 +76,22 @@
 - [ ] 9.4 端到端走查 `specs/platform-publishing/spec.md` 的全部场景（真实平台发布以人工验收替代自动化），验证方式：逐场景执行并记录，含登录授权引导、登录态失效提示、门禁在两条路径均生效、低分告警不阻断、归因失败显示原因
 - [x] 9.5 以 `catalogDescriptionMaxLength` 调优验证技能目录成本，验证方式：记录默认值与调低值下同一会话的目录字符数对比，确认描述被截断而技能名称完整
 
+## 10. 打包与激活（安装实测发现）
+
+安装实测暴露宿主半边导入失败（详见 `design.md` 的 D11–D14 与「安装与激活实测记录（2026-10-09）」）：
+
+- [x] 10.1 把 `@deepseek-ai/schemastery`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/cordis` 从 `dependencies` 移到 `peerDependencies`（版本范围对齐 DSH 0.2.0-rc.2 与 schemastery `^3.18.4`），验证方式：断言 `package.json` 的 `dependencies` 无任何 `@deepseek-ai/*`，宿主包出现在 `peerDependencies`；**实测结论**：`dependencies` 已移除，`@deepseek-ai/dsh-llm` 与 `@deepseek-ai/schemastery` 同时在 `peerDependencies` 与 `devDependencies`，断言见 `test/plugin-hygiene.test.mjs` 的 10.2 用例
+- [x] 10.2 在 `test/plugin-hygiene.test.mjs` 增加打包契约防回归断言（宿主包不得出现在 `dependencies`、`dsh.client.inject` 只列客户端包、`files` 覆盖 `lib/client.js` 与 `scripts/bootstrap-runtime.sh`），验证方式：`node --test test/plugin-hygiene.test.mjs` 通过；**实测结论**：新增「打包契约」用例覆盖宿主包不得进 `dependencies`、`dsh.client.inject` 只列 `@deepseek-ai/dsh-client-*`、`files` 覆盖产物与引导脚本、`dsh.bundle.patch` 与 `private:true`
+- [x] 10.3 新增安装自检（`scripts/check-install.mjs` 或 README 中的等价命令）：在目标 profile 目录尝试 `import("easel-workbench")` 并请求 `GET <API_PREFIX>/config`，任一失败即非零退出，分别给出「源码树缺 `node_modules`」与「宿主半边未挂载，请重载进程」的指引，验证方式：对「源码树 `link:` 且无 `node_modules`」的已知失败态跑一次，得到非零退出与对应文案；**实测结论**：脚本落在 `scripts/check-install.mjs`（`--profile/--url/--import/--no-http/--json`），对真实 profile 五项全绿 exit 0；`test/check-install.test.mjs` 4 例覆盖「源码树 link: 缺依赖 → 非零退出 + pnpm install 指引」「未列进 bundles」「空响应体 404 → 重载 DSH」与通过态
+- [x] 10.4 客户端在收到无响应体的 404 时显示「宿主服务未挂载，请重载 DSH」提示，验证方式：`test/client.test.mjs` 注入空体 404 断言提示与重试入口存在；注入插件 JSON 错误时保持按响应体 `message` 呈现；**实测结论**：`createApi(prefix, t)` 区分「404 且解析不出 JSON」与插件自己的 JSON 404，空体时显示 `error.hostNotMounted` 并保留重试入口，`test/client.test.mjs` 有对应用例
+- [x] 10.5 以物化方式重装（`pnpm pack` → 安装 `.tgz`，或改用 git 规格），重载 DSH 后确认 `GET /easel-workbench/api/config` 返回 200 且面板各子页无 404，验证方式：`curl` 断言 200 + JSON，浏览器逐子页走查；本项需重载运行中的进程，列用户验收；**实测结论**：用户重启 3080 实例后 `curl /easel-workbench/api/config`、`/overview`、`/selfcheck`、`/topics` 全部 200 + JSON（`easelRoot=…/_repo`），面板十个子页不再报 404；当前仍是源码树 `link:` 安装，物化重装见「待用户验收」
+- [x] 10.6 回写 `dsh-plugins/README.md` §1/§3：补「物化安装为受支持方式」「源码树 `link:` 须自带 `node_modules`」「profile 供应链策略 `minimumReleaseAge` 可能阻断安装」「安装后必须重载进程」「激活验收判据 = 宿主接口 200」五条，验证方式：照文档从零复现一次安装并得到 200；**实测结论**：README §1/§3 之外补了 §2 的 `~/.local/bin` 候选与来源标记、§4 的「让已安装副本复用一份现成的运行时」、§8 的三行排查项与 §10 的 `check-install.mjs` 用法表
+
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **277 项全绿**（`fail 0`）；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **277 项全绿**（`fail 0`；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -111,6 +122,29 @@
 - 技能目录成本（9.5）：真实 `_repo/skills/openclaw` 的 114 个 `SKILL.md` 上，
   `catalogDescriptionMaxLength=500` → 目录 24493 字符、0 条截断；`120` → 15577 字符、109 条截断
   （省 8916 字符）；两档 `name` 序列完全一致。明细表见 `dsh-plugins/README.md` §6.4。
+- **运行时探测与安装自检（2026-10-09，第 13 项实现期改进，对应 tasks 10.3/10.4 与 design D15）**：用户报「环境自检里
+  Python/ffmpeg 都是 missing」后核实——只扫 `PATH` 会得出「本机没有 Python」的错误结论（本机 `~/.local/bin/python3.12`
+  指向自建 CPython 3.12.15 可用，但 `PATH` 不含该目录）。改动：① `lib/host/runtime.js` 新增
+  `userBinDirs(userBinCandidates)`，Python/ffmpeg 候选追加 `~/.local/bin` 并以来源 `user-bin` 与 `path` 区分；
+  ② `lib/host/selfcheck.js` 每条非 `ok` 条目自带可执行 `hint`（`ok` 条目必须不带）；③ `src/client.js` 单独渲染
+  `path`/`detail`/`hint` 并在空响应体 404 时显示「宿主服务未挂载」；④ 新增 `scripts/check-install.mjs` 与
+  `test/{selfcheck,check-install}.test.mjs`。实测：`node --test test/*.test.mjs` → **292 项全绿**；
+  `node scripts/check-install.mjs --profile /data/dsh/profiles/web --url http://127.0.0.1:3080` → 五项全绿 exit 0
+  （`easelRoot=/data/dsh/home/dsh-hub/Easel/_repo`）；`probeRuntime` 真实配置下 `python.ok=true`（`user-bin`）、
+  `ffmpeg` 仍 `not-found`（本机没装，属如实降级）。已把开发副本的 `.runtime` 通过 profile 补丁层
+  `/data/dsh/profiles/web/cordis.patch.yml` 定向覆盖给已安装副本（`dsh --profile web --dump-config` 已确认合成结果）。
+- **安装与激活实测（2026-10-09，第 12 项实现期缺陷，属打包契约而非接口逻辑）**：按用户报障（面板 10 个子页
+  全部 `HTTP 404`）定位到——现象：`curl http://127.0.0.1:3080/easel-workbench/api/config` → `404`、`0B`
+  （DSH 默认 404、无响应体，与插件自身 `lib/host/web.js:361` 的 JSON 404 可区分）；
+  `plugin_manager action=set_bundle` → `1 entry did not activate / easel-workbench (easel-workbench): failed to import`。
+  根因：以源码树 `link:` 安装（`dependencies["easel-workbench"]="link:…/_repo/dsh-plugins/easel-workbench"`）时
+  pnpm 不为该目标装依赖，Node 又按链接目标的真实路径解析模块 →
+  `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench/lib/host/config.js`，
+  宿主半边 `apply` 未执行，`webServer.register` 从未注册。处置：宿主运行时包改 `peerDependencies`（与 profile 内
+  `dsh-context`/`@michengai/dsh-automation`/`dsh-mcp-connector` 的 `dependencies:{}` 惯例一致，D11）；以物化安装为
+  受支持方式、源码树 `link:` 只作开发态（D12）；安装后必须重载进程、以宿主接口 200 为验收判据（D13）；
+  客户端对空体 404 给可操作诊断（D14）。新增能力 delta `specs/workbench-bundle-packaging/spec.md` 与
+  `specs/creator-workbench-ui/spec.md` 的「宿主服务缺失时的可操作诊断」requirement；对应任务见 §10。
 
 ## 待用户验收（本机无法完成的部分）
 
@@ -130,11 +164,20 @@
   改动人设来源后新会话用新文本而已有会话不受影响（这些任务的实现与单元测试部分均已完成）。
 - **2.1**：`plugin_manager action=install_bundle target=<包绝对路径>` 需用户执行；包骨架与宿主/客户端
   入口契约已由 `test/index.test.mjs`、`test/client.test.mjs` 覆盖（含缺 `lib/client.js` 时的报错路径）。
+  2026-10-09 实测：**安装本身成功**（`dsh.profile.bundles` 含 `easel-workbench`、`node_modules/easel-workbench`
+  符号链接就位），失败发生在激活阶段——见 §10 与 `design.md` 的 D11–D14、安装与激活实测记录。
 - **2.4**：中文界面、英文界面、折叠态三张截图。
 - **7.2**：在 DSH 排期界面暂停/删除工作台条目后，工作台视图同步显示为已暂停/已消失。
 - **8.1 / 8.3**：删除 `_repo/easel/`、`_repo/openclaw/`、`setup.sh`、`setup.ps1` 与 `web/app.py` 的三组
   路由，以及替换 20 个 OpenClaw 集成测试——8.1 的前置条件是「新路径全部验收通过」，即上面这些真机验收；
   在此之前 `_repo` 保持原样（8.5）。
+- **10.5（已验证）**：用户重启 3080 实例后 `GET /easel-workbench/api/config`、`/overview`、`/selfcheck`、
+  `/topics` 均 200 + JSON，面板十个子页不再出现 404——「宿主半边是否挂载」这一判据已达成。**仍开放的可选硬化项**：
+  以物化方式（`pnpm pack` 生成的 `.tgz`）重装，摆脱源码树 `link:` 与开发副本共用目录的耦合。本机到 PyPI 不可达，
+  且 `github:`/git 规格会被 pnpm 解析成 `git+ssh://`（本机 ssh 读不到 `/home/node/.ssh`，见 `design.md` 实测记录），
+  故不宜走 git 规格。
+- **10.6（已完成）**：README 的安装/探测/排查/开发各节已按实测回写（含 `~/.local/bin` 候选、`user-bin` 来源标记、
+  非 ok 条目的 `hint`、profile 补丁层定向覆盖 `runtimeDir`、`scripts/check-install.mjs` 用法表）。
 
 ## Workflow follow-up
 

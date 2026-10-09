@@ -43,16 +43,22 @@ Easel 检出取 `<工作区>/_repo`，与进程工作目录无关；开发态放
 
 | 能力 | 探测顺序 |
 | --- | --- |
-| Python | `pythonExecutable` 配置 → `<runtimeDir>/venv/bin/python` → `PATH` 上的 `python3`、`python` |
-| ffmpeg | `ffmpegExecutable` 配置 → `<runtimeDir>/ffmpeg/bin/ffmpeg` → `PATH` 上的 `ffmpeg` |
+| Python | `pythonExecutable` 配置 → `<runtimeDir>/venv/bin/python` → `PATH` 上的 `python3`、`python`、`python3.13`…`python3.10` → **`~/.local/bin` 下的同名候选** |
+| ffmpeg | `ffmpegExecutable` 配置 → `<runtimeDir>/ffmpeg/bin/ffmpeg` → `PATH` 上的 `ffmpeg` → `~/.local/bin/ffmpeg` |
 
 要点：
 
 - **显式配置优先且不回退**。配了 `pythonExecutable` 而该文件不存在，自检直接报 `configured-missing`，
   不会悄悄改用 PATH 上的解释器——避免「以为在用受控运行时、其实在用系统 Python」。
 - `runtimeDir` 留空时解析为 **`<插件包根>/.runtime`**，即引导脚本的默认落点，两者天然对齐。
+  用 `link:` 方式装进 profile 时，包根是**链接目标**；如果那份副本没有 `.runtime`，可以在 profile
+  的 `cordis.patch.yml` 里用 id 定向覆盖把它指到已有运行时（示例见第 4 节）。
+- **`~/.local/bin` 单列**：`pip install --user`、pipx、以及「把自建解释器软链到 `~/.local/bin`」
+  都不会修改 `PATH`，只扫 PATH 会得出「没有 Python」的错误结论。命中用户态目录时自检的
+  `source` 是 `user-bin`，与 PATH 命中的 `path` 区分开。
 - 探测结果不缓存于仓库内；登录态与二维码固定落在**仓库之外**（见第 5 节）。
-- Python 版本探测超时 10 秒；缺 Python 或 ffmpeg **不会**让插件挂载失败，只会让对应技能不可用。
+- Python 版本探测超时 10 秒；缺 Python 或 ffmpeg **不会**让插件挂载失败，只会让对应技能不可用，
+  并且自检里每一条非 `ok` 的条目都会带一段 `hint`（告诉用户下一步该运行什么命令）。
 
 ## 3. 引导脚本 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`
 
@@ -150,6 +156,21 @@ PyMuPDF、PyYAML、requests、urllib3、zhconv）；除 `easel` 组的可编辑�
 `personaSource` / `rulesSource` 支持绝对路径（原样使用）与相对路径（相对插件包根解析）；
 未配置或读不到时回落到随包的 `assets/`，**已创建的会话不受影响**（人设只在创建 agent 时读取）。
 改完配置新建一个会话就能看到新文本。
+
+### 让已安装副本复用一份现成的运行时
+
+用 `link:` 装进 profile 时，包根是链接目标（例如 `<工作区>/_repo/dsh-plugins/easel-workbench`），
+而你可能只在开发副本（`<工作区>/dsh-plugins/easel-workbench`）里跑过引导脚本。这时在 profile 的
+`cordis.patch.yml` 里按 id 定向覆盖即可（补丁层在每个 bundle 层之后生效）：
+
+```yaml
+- id: easel-workbench
+  config:
+    # 绝对路径；指到已经建好的 venv 所在目录，避免在另一份副本里重下一遍
+    runtimeDir: /绝对路径/dsh-plugins/easel-workbench/.runtime
+```
+
+改完必须重载/重启 DSH 才会重新读取配置（见第 8 节与 design D13）。
 
 ## 5. 登录态与仓库只读
 
@@ -250,10 +271,12 @@ roots”，且 `includeDefaultRoots`（`:33`）默认 `true` → **原 DSH 技�
 | 现象 | 原因与处理 |
 | --- | --- |
 | 侧边栏没有「自媒体工作台」入口 | `dsh.client.platform` 有值但 `lib/client.js` 缺失 → 跑 `node scripts/build-client.mjs`，然后重新加载页面 |
-| 面板打开但各区域都报接口错误 | 宿主半边没加载：`plugin_manager` 里确认 bundle 已启用，看宿主日志有没有「工作台已挂载」 |
+| 面板打开但各区域都报接口错误 | 宿主半边没加载：跑 `node scripts/check-install.mjs`（第 10 节）定位；若客户端显示「宿主服务未挂载」即接口 404 且无响应体，重载/重启 DSH 后重试 |
+| 装了但不确定是否真的生效 | `node scripts/check-install.mjs --profile /data/dsh/profiles/web`：五项全绿才算「装上了而且宿主接口可达」 |
 | 自检里 `python` 为 `configured-missing` | `pythonExecutable` 指向了不存在的文件；显式配置**不会**回退到 PATH，改配置或删掉它 |
-| 自检里 `python`/`ffmpeg` 缺失 | 跑 `bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`；ffmpeg 按脚本打印的系统命令自行安装 |
-| 自检里 `runtime-dir` 缺失 | 提示会点名引导脚本，按第 3 节执行 |
+| 自检里 `python`/`ffmpeg` 缺失 | 先看条目自带的 `hint`：Python 可用 `pythonExecutable`、引导脚本或 `~/.local/bin` 任一路径解决；ffmpeg 按脚本打印的系统命令自行安装 |
+| 自检里 `runtime-dir` 缺失/降级 | 提示会点名引导脚本的绝对路径，按第 3 节执行；也可以把 `runtimeDir` 指到已有运行时（第 4 节） |
+| 自检里 `python` 显示 `user-bin` | 命中的是 `~/.local/bin` 下的解释器（不在 `PATH` 上）；只要版本够用就是正常结果 |
 | 技能目录里没有 Easel 技能 | 确认 `dsh-skill-filesystem` 已启用且 `skillDirs` 指向 `<easelRoot>/skills/openclaw` |
 | 写画像/产物报 `upstream-read-only` | 目标落在 `skills/` 下；这是设计行为，换到 `profiles/` 或 `outputs/` |
 | 写文件报 `not-configured` | 没定位到 Easel 数据根：设 `easelRoot` 指向含 `skills/` 与 `pyproject.toml` 的目录 |
@@ -297,7 +320,22 @@ Easel 原来的 `easel` CLI 与 `web/app.py` 工作台被拆成「DSH 原生能�
 node scripts/build-client.mjs          # 生成 lib/client.js
 node scripts/build-client.mjs --check  # 校验产物是否与源码/locale 同步（CI 用）
 node --test test/*.test.mjs            # 全部测试
+node scripts/check-install.mjs --profile /data/dsh/profiles/web   # 安装自检（见下）
 ```
+
+`scripts/check-install.mjs` 把「装上了」与「真的在跑」分开检查，任一项失败即非零退出：
+
+```bash
+node scripts/check-install.mjs [--profile <profile 目录>] [--url <http://127.0.0.1:3080>] [--import] [--no-http] [--json]
+```
+
+| 检查项 | 判据与失败时的下一步 |
+| --- | --- |
+| `profile` | profile 清单声明了本插件且列进 `dsh.profile.bundles`；否则按 README §1 重装 |
+| `包落地` | 从 profile 能解析到插件目录，`lib/index.js` 与 `lib/client.js` 都是非空文件；`lib/client.js` 缺失时先跑 `build-client.mjs` |
+| `裸导入` | `lib/**` 里每个裸模块说明符都能落地：`node:` 内置、`peerDependencies`（由 DSH 的 profile 解析拦截提供），或目标目录/profile 的 `node_modules` 里真实存在。**这一项就是「源码树 `link:` 缺 `node_modules`」的判据** |
+| `import`（可选 `--import`） | 在 profile 目录里真的 `import("easel-workbench")`；仅因宿主 peer 包缺失而失败时只作信息提示（普通 Node 进程看不到 DSH 的拦截层） |
+| `HTTP` | `GET <url>/easel-workbench/api/config` 必须 200 + JSON；**空响应体的 404 = 宿主半边未挂载，重载/重启 DSH**（design D13） |
 
 宿主半边（`lib/host/**`）是纯函数式服务，测试用假 `ctx` 注入；客户端测试跑在 jsdom 里并校验
 产物不含 iframe、不含 DSH 客户端包依赖、不含硬编码色值。需要可执行位的测试夹具建在

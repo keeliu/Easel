@@ -97,6 +97,44 @@
 
 `locale/zh-CN.json` 与 `locale/en.json` 提供 `meta.title`/`meta.description` 与面板文案；顶层 `icon` 为包内相对路径的 SVG。面板条目 label 用 locale-aware 形式而非硬编码中文字符串。
 
+### D11：宿主运行时包一律用 `peerDependencies` 声明
+
+`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/cordis` 都由 DSH 宿主或 profile 提供，插件只用 `peerDependencies` 声明版本范围，`dependencies` 保持为空。实测证据：profile 内同类插件 `dsh-context`（`{"@deepseek-ai/schemastery":"^3.18.2","@deepseek-ai/cordis":"^4.0.2"}`）、`@michengai/dsh-automation`、`dsh-mcp-connector` 的 `dependencies` 全为 `{}`，宿主内部包只出现在 `peerDependencies`；本插件原先把它们写在 `dependencies`。
+
+- **备选**：继续用 `dependencies` 自装宿主包。否决理由：pnpm 会尝试把宿主内部包装进插件自己的树，与运行时的实际解析路径不一致，且与生态约定冲突。
+
+### D12：bundle 以「物化安装」为受支持方式，源码树 `link:` 只作开发态
+
+pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真实路径**解析模块，因此当源码树位于 profile 之外时，它永远看不到 profile 的 `node_modules`。实测：以 `link:` 安装后，profile 解析到的是 `_repo/dsh-plugins/easel-workbench/lib/index.js`，其内部导入抛
+`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench/lib/host/config.js`。
+受支持的安装方式是**物化安装**（`pnpm pack` 后安装 `.tgz`／git 规格／registry），使插件落在 profile 的 `node_modules` 树内、peer 依赖沿树向上解析；若坚持源码树 `link:`，该源码树必须先自带 `node_modules`（本机即以 `pnpm install --config.minimumReleaseAge=0` 修复后才能导入）。
+
+- **备选**：把宿主包 vendor 进包内。否决理由：与 DSH 版本漂移，且违背「对模型、会话、技能零持有」的目标。
+
+### D13：安装或依赖变化后必须重载进程，验收判据是宿主接口可达
+
+宿主半边导入失败时，cordis 中该条目没有 fiber（`@deepseek-ai/dsh-app-boot/lib/index.js:3904-3913` 把 `entry.fiber === undefined` 记为 `failed to import`），`ctx.webServer.register({kind:"prefix", path:"/easel-workbench/api"})` 因此从未执行。运行中的进程不会自行重试：实测 `touch` 补丁文件、入口与 `package.json` 后接口仍 404；`plugin_manager` 的 `set_bundle enabled=true` 返回 `changed:false` 并重复旧的 `failed to import`。故验收判据是「重启 DSH 后 `GET /easel-workbench/api/config` 返回 200 且响应体为 JSON」，而不是「侧边栏出现了入口」。
+
+- **备选**：进程内热修复后验收。否决理由：DSH 没有重载失败条目的入口，等待不会自愈。
+
+### D14：客户端在宿主半边缺失时给出可操作诊断
+
+宿主未挂载时，`/easel-workbench/api/*` 返回的是 DSH 的默认 404（0 字节、无响应体），与插件自身 404 的 `{"ok":false,"code":"not-found",…}` 可区分。客户端 SHALL 对「无响应体的 404」显示「宿主半边未挂载，请重启 DSH」一类的可操作提示，而不是裸的 `错误信息: HTTP 404`；对插件自身返回的错误仍按原有错误态呈现。
+
+### D15：运行时探测必须覆盖用户态目录，缺失项必须自带下一步
+
+只扫 `PATH` 会得出「本机没有 Python」的**错误**结论：实测本机 `~/.local/bin/python3.12`（指向自建 CPython 3.12.15 的软链）可用，而 `PATH` 里没有 `~/.local/bin`。因此探测顺序在 `PATH` 之后追加**用户态可执行目录**（`~/.local/bin`），并把命中来源标为 `user-bin`（与 `path` 区分），使自检能如实说明「这个解释器是从哪儿来的」。
+
+与此配套的自检契约：每一条非 `ok` 条目 SHALL 带 `hint`——**具体的下一步**（要运行的命令或要改的配置键），而不是只报告「未找到」；`ok` 条目 MUST NOT 带 `hint`，避免面板堆无意义提示。`hint` 里出现的脚本路径用 `packageRoot` 展开成绝对路径，不能是占位符（用户要能直接复制粘贴）。
+
+`runtimeDir` 与包根绑定（`<插件包根>/.runtime`）是把运行时放在检出之外的正确默认，但 `link:` 安装会让「包根」指向链接目标，于是开发副本里的 venv 对已安装副本不可见。这不是缺陷而是配置点：用 profile 补丁层的 id 定向覆盖把 `runtimeDir` 指到已有运行时即可（README 第 4 节给了可复制的写法），插件 MUST NOT 自行在副本之间猜测或搬运运行时。
+
+### 安装与激活实测记录（2026-10-09）
+
+- **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。
+- **环境阻断（与插件无关，但决定了安装路径）**：① profile 级 pnpm 供应链策略校验**整份 lockfile**（559 条），既有的 `billion-context@0.1.189` 落在 `minimumReleaseAge`（cutoff = now − 24h）内 → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，该 24 小时窗口内任何安装都失败（`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 未生效）；② `github:`/git 规格被 pnpm 解析为 `git+ssh://git@github.com/…`，而本机 ssh 读 `/home/node/.ssh`（不存在且父目录只读，`$HOME=/data/dsh/home` 被 ssh 忽略）→ `Host key verification failed`；③ 仓库约 323 MB，git 依赖会整仓克隆。
+- **失败表现**：客户端半边（面板与 10 个子导航）正常渲染，各子页显示 `错误信息: HTTP 404`；`curl http://127.0.0.1:3080/easel-workbench/api/config` → `HTTP 404`、`0B`（DSH 默认 404，而非插件 JSON 404）；`plugin_manager action=set_bundle` → `1 entry did not activate / easel-workbench (easel-workbench): failed to import`。
+
 ## Risks / Trade-offs
 
 - **[`sidebar.panellist` 的像素位置未截图验证]**：位置结论来自 README 描述的渲染次序（品牌行 → New Session → panellist → 会话列表 → 设置行），未在真实界面上确认。→ 缓解：实现期第一件事是在本机 profile 装一个最小 bundle 只注册一个 panellist 条目，截图确认位置；若不满足需求，退路是改用 `sidebar.brand` 下方的自定义插槽或 `sidebar.workspaces` 之上的就近锚点（备选见 `EASEL-DSH-需求文档.md` F4.3）。

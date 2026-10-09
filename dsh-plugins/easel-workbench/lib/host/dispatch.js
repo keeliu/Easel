@@ -17,6 +17,7 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { ERROR_CODES, ensure } from "./errors.js";
 import { assertSelfContained, buildTaskBrief } from "./brief.js";
 import { EASEL_PRESET_ID } from "./persona.js";
+import { serviceOf } from "./services.js";
 
 /** 会话标识的合法形状（DSH 侧是品牌化字符串，这里只做输入校验）。 */
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -60,18 +61,19 @@ export function createDispatchService(deps) {
   const { ctx, runtime, paths } = deps;
 
   function requireAgents() {
+    const agents = serviceOf(ctx, "agents");
     ensure(
-      ctx?.agents !== undefined && typeof ctx.agents.create === "function" && typeof ctx.agents.get === "function",
+      agents !== undefined && typeof agents.create === "function" && typeof agents.get === "function",
       ERROR_CODES.NOT_CONFIGURED,
       "当前 DSH 运行环境没有 Agent 服务，无法把任务派发到会话。",
     );
-    return ctx.agents;
+    return agents;
   }
 
   /** 当前默认模型选择；读不到就返回 undefined（DSH 会在缺省时用自己的回落逻辑）。 */
   function currentSelection() {
     try {
-      const selection = ctx?.agentDefaultModel?.currentSelection?.();
+      const selection = serviceOf(ctx, "agentDefaultModel")?.currentSelection?.();
       if (selection === undefined || selection === null) return undefined;
       const { provider, model } = selection;
       if (typeof provider !== "string" || typeof model !== "string") return undefined;
@@ -90,7 +92,7 @@ export function createDispatchService(deps) {
   /** `easel` preset 是否已经注册（没有就不写 `meta.agentPreset`，避免创建失败）。 */
   function presetAvailable() {
     try {
-      const registry = ctx?.agentPresets;
+      const registry = serviceOf(ctx, "agentPresets");
       if (registry === undefined) return false;
       if (typeof registry.list === "function") {
         const presets = registry.list();
@@ -129,7 +131,7 @@ export function createDispatchService(deps) {
    * 工作区分组。能力缺失或登记失败都不影响派发本身——工作区登记是展示层的事。
    */
   async function ensureWorkspaceRegistered(directory) {
-    const controller = ctx?.workspaceController;
+    const controller = serviceOf(ctx, "workspaceController");
     if (directory === undefined || controller === undefined) return;
     if (typeof controller.create !== "function") return;
     try {
@@ -143,8 +145,9 @@ export function createDispatchService(deps) {
   async function attachmentBlocks(attachments) {
     const list = Array.isArray(attachments) ? attachments : [];
     if (list.length === 0) return [];
+    const attachmentStore = serviceOf(ctx, "attachments");
     ensure(
-      ctx?.attachments !== undefined && typeof ctx.attachments.saveFile === "function",
+      attachmentStore !== undefined && typeof attachmentStore.saveFile === "function",
       ERROR_CODES.NOT_CONFIGURED,
       "当前 DSH 运行环境没有附件服务，无法附带文件。",
     );
@@ -169,7 +172,7 @@ export function createDispatchService(deps) {
       );
       const data = await readFile(absolute);
       const name = (typeof entry === "object" && entry?.name) || basename(absolute);
-      const ref = await ctx.attachments.saveFile({ data: new Uint8Array(data), name });
+      const ref = await attachmentStore.saveFile({ data: new Uint8Array(data), name });
       blocks.push({ type: "file", attachment: ref });
     }
     return blocks;
@@ -187,14 +190,16 @@ export function createDispatchService(deps) {
   const service = {
     /** 环境能力快照，面板与自检都用它决定显示什么。 */
     capabilities() {
-      const agents = ctx?.agents;
+      const agents = serviceOf(ctx, "agents");
+      const attachmentStore = serviceOf(ctx, "attachments");
+      const scheduleService = serviceOf(ctx, "schedule");
       return {
         agents: agents !== undefined && typeof agents.create === "function",
         resume: agents !== undefined && typeof agents.resume === "function",
-        attachments: ctx?.attachments !== undefined && typeof ctx.attachments.saveFile === "function",
+        attachments: attachmentStore !== undefined && typeof attachmentStore.saveFile === "function",
         agentPresets: presetAvailable(),
         defaultModel: currentSelection() !== undefined,
-        schedule: ctx?.schedule !== undefined && typeof ctx.schedule.create === "function",
+        schedule: scheduleService !== undefined && typeof scheduleService.create === "function",
       };
     },
 

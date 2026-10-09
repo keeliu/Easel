@@ -15,6 +15,7 @@
 
 import { ERROR_CODES, ensure } from "./errors.js";
 import { assertSelfContained, buildTaskBrief } from "./brief.js";
+import { serviceOf } from "./services.js";
 
 /** 工作台排期项的标题前缀（`catalog()` 里据此识别）。 */
 export const EASEL_SCHEDULE_PREFIX = "Easel｜";
@@ -81,7 +82,7 @@ export function createScheduleService(deps) {
   const { ctx } = deps;
 
   function requireSchedule() {
-    const service = ctx?.schedule;
+    const service = serviceOf(ctx, "schedule");
     ensure(
       service !== undefined && typeof service.create === "function" && typeof service.catalog === "function",
       ERROR_CODES.NOT_CONFIGURED,
@@ -93,7 +94,7 @@ export function createScheduleService(deps) {
   const service = {
     /** 是否具备 DSH 排期能力（环境自检与面板都用它决定是否显示排期入口）。 */
     available() {
-      const schedule = ctx?.schedule;
+      const schedule = serviceOf(ctx, "schedule");
       return schedule !== undefined && typeof schedule.create === "function" && typeof schedule.catalog === "function";
     },
 

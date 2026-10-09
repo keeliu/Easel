@@ -52,6 +52,7 @@ window.__ModuleLoader__.load({
       "common.retry": "重试",
       "common.save": "保存",
       "common.unknown": "未知",
+      "error.hostNotMounted": "宿主服务未挂载：请重载或重启 DSH 后重试。",
       "library.download": "下载",
       "nav.accounts": "账号",
       "nav.analytics": "数据",
@@ -113,6 +114,7 @@ window.__ModuleLoader__.load({
       "common.retry": "Retry",
       "common.save": "Save",
       "common.unknown": "Unknown",
+      "error.hostNotMounted": "Host service is not mounted: reload or restart DSH, then retry.",
       "library.download": "Download",
       "nav.accounts": "Accounts",
       "nav.analytics": "Analytics",
@@ -206,6 +208,7 @@ window.__ModuleLoader__.load({
       ".easel-row-title{overflow-wrap:anywhere}",
       ".easel-muted{color:var(--dsw-alias-label-secondary);font-size:12px}",
       ".easel-path{overflow-wrap:anywhere}",
+      ".easel-hint{padding-left:8px;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);font-size:12px;overflow-wrap:anywhere}",
       ".easel-kv{margin:0;display:flex;flex-direction:column;gap:4px}",
       ".easel-kv-row{display:flex;gap:10px}",
       ".easel-kv-key{margin:0;min-width:120px;color:var(--dsw-alias-label-secondary)}",
@@ -240,6 +243,11 @@ window.__ModuleLoader__.load({
       if (error.name === "SlotAssemblyError") return true;
       var ctor = error.constructor;
       return ctor !== undefined && ctor !== null && ctor.name === "SlotAssemblyError";
+    }
+
+    /** 判断一个字段是否有可渲染的文本（自检条目的 `path`/`detail`/`hint` 都可为空）。 */
+    function hasText(value) {
+      return value !== null && value !== undefined && String(value) !== "";
     }
 
     function formatBytes(value) {
@@ -291,8 +299,16 @@ window.__ModuleLoader__.load({
      * 统一请求：只认 `{ok:true,...}` 与 `{ok:false,code,message}` 两种形状，并把整个
      * payload 交给调用方——各接口的集合字段名由宿主路由决定（`profiles` / `projects` /
      * `items` / `records`…），在这里再抄一遍字段名必然漂移。
+     *
+     * 唯一的例外是**空响应体的 404**：插件自己的 404 一定带
+     * `{ok:false,code:"not-found",message}`（`lib/host/web.js`），所以「404 且解析不出 JSON」
+     * 只可能是宿主半边没挂载时 DSH 自己回的默认 404。这种情况给一句可操作的提示，
+     * 而不是把裸的 `HTTP 404` 摊给用户（design D14）。
      */
-    function createApi(prefix) {
+    function createApi(prefix, translate) {
+      var tr = typeof translate === "function" ? translate : function (key) {
+        return key;
+      };
       return function request(path, options) {
         return fetch(prefix + path, options).then(function (response) {
           return response
@@ -302,12 +318,18 @@ window.__ModuleLoader__.load({
             })
             .then(function (payload) {
               if (payload !== null && payload.ok === true) return payload;
-              var message =
-                payload !== null && typeof payload.message === "string" && payload.message !== ""
+              var hostNotMounted = payload === null && response.status === 404;
+              var message = hostNotMounted
+                ? tr("error.hostNotMounted")
+                : payload !== null && typeof payload.message === "string" && payload.message !== ""
                   ? payload.message
                   : "HTTP " + String(response.status);
               var error = new Error(message);
-              error.code = payload !== null && typeof payload.code === "string" ? payload.code : "http-" + String(response.status);
+              error.code = hostNotMounted
+                ? "host-not-mounted"
+                : payload !== null && typeof payload.code === "string"
+                  ? payload.code
+                  : "http-" + String(response.status);
               throw error;
             });
         });
@@ -980,7 +1002,9 @@ window.__ModuleLoader__.load({
                   "div",
                   { className: "easel-row-main" },
                   h("span", { className: "easel-row-title" }, String(entry.label || entry.id || "")),
-                  h("span", { className: "easel-path easel-muted" }, String(entry.path || entry.detail || "")),
+                  hasText(entry.path) ? h("span", { className: "easel-path easel-muted" }, String(entry.path)) : null,
+                  hasText(entry.detail) ? h("span", { className: "easel-muted" }, String(entry.detail)) : null,
+                  hasText(entry.hint) ? h("span", { className: "easel-hint" }, String(entry.hint)) : null,
                 ),
                 h("span", { className: "easel-tag easel-state-" + String(entry.status) }, String(entry.status)),
               );
@@ -1199,7 +1223,7 @@ window.__ModuleLoader__.load({
 
       injectStyle(ctx);
 
-      var api = createApi(API_PREFIX);
+      var api = createApi(API_PREFIX, t);
 
       // 返回对话：`ILayout.selectPanel(null)` 即回到 Conversation。layout 是可选服务，
       // 取不到时只降级为「点了没反应」，不能让整个面板崩掉。

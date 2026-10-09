@@ -53,11 +53,15 @@ function makeAgent() {
   return agent;
 }
 
-function makeCtx({ agents, ...rest } = {}) {
-  return {
-    ...(agents === undefined ? {} : { agents }),
-    ...rest,
-  };
+/**
+ * 假插件上下文。
+ *
+ * 真实 cordis 上下文**只允许**读取静态 `inject` 里声明过的服务属性，其余服务一律经
+ * `ctx.get(name)` 读取（未提供时返回 undefined）；测试替身照此实现（服务同时挂在
+ * 属性上，便于断言调用记录），否则测出来的行为与宿主运行时不符。
+ */
+function makeCtx(services = {}) {
+  return { ...services, get: (name) => services[name] };
 }
 
 async function withTempDir(run) {

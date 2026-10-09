@@ -110,6 +110,46 @@ test("package.json 的 files 覆盖运行时要读的全部资源", async (t) =>
   assert.ok(existsSync(join(PACKAGE_ROOT, "assets", "rules.md")));
 });
 
+test("10.2 打包契约：宿主包只许出现在 peerDependencies，客户端 inject 只列客户端包", async (t) => {
+  const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
+
+  // 宿主运行时包必须靠 peerDependencies 才走 DSH 的 profile 解析拦截
+  // （`@deepseek-ai/dsh-app-boot` 的 readPeerNames 只读这个字段）；写进 dependencies 时
+  // 以源码树 link: 安装会因为 pnpm 不为其装依赖而 import 失败（design D11/D12）。
+  const runtimeHostPackages = ["@deepseek-ai/dsh-llm", "@deepseek-ai/schemastery"];
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    assert.ok(!name.startsWith("@deepseek-ai/"), `dependencies 不得含宿主包：${name}（应改为 peerDependencies）`);
+  }
+  for (const name of runtimeHostPackages) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(manifest.peerDependencies ?? {}, name),
+      `peerDependencies 缺少宿主包 ${name}`,
+    );
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(manifest.devDependencies ?? {}, name),
+      `devDependencies 缺少 ${name}（本地开发与测试要能直接解析）`,
+    );
+  }
+
+  // 客户端注入的是**客户端侧包**（渲染槽位与字典都来自浏览器半边）。
+  const inject = manifest.dsh?.client?.inject ?? [];
+  assert.ok(inject.length > 0, "dsh.client.inject 不应为空");
+  for (const name of inject) {
+    assert.match(name, /^@deepseek-ai\/dsh-client-/, `dsh.client.inject 只应列客户端包：${name}`);
+    assert.ok(!runtimeHostPackages.includes(name), `dsh.client.inject 混入了宿主包：${name}`);
+  }
+
+  // 打包后必须带上运行时要读的东西：产物、补丁层、引导脚本。
+  const files = manifest.files ?? [];
+  for (const required of ["lib", "scripts"]) assert.ok(files.includes(required), `files 缺少 ${required}`);
+  for (const artifact of ["lib/client.js", "lib/index.js", "scripts/bootstrap-runtime.sh", "cordis.patch.yml"]) {
+    assert.ok(existsSync(join(PACKAGE_ROOT, artifact)), `打包清单声明的资源不存在：${artifact}`);
+    assert.ok(statSync(join(PACKAGE_ROOT, artifact)).size > 0, `资源为空：${artifact}`);
+  }
+  assert.equal(manifest.dsh?.bundle?.patch, "./cordis.patch.yml", "dsh.bundle.patch 必须指向补丁层");
+  assert.equal(manifest.private, true, "未发布到 registry，安装必须用绝对路径/物化包");
+});
+
 // ---------------------------------------------------------------------------
 // 9.5 技能目录成本：catalogDescriptionMaxLength 默认值 vs 调低值
 // ---------------------------------------------------------------------------

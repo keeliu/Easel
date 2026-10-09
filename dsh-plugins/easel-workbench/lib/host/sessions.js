@@ -13,6 +13,7 @@
  */
 
 import { attempt } from "./errors.js";
+import { serviceOf } from "./services.js";
 
 /** 宿主会话存储可能的服务键（按优先级）。 */
 export const SESSION_STORE_KEYS = Object.freeze(["sessionStore", "sessions"]);
@@ -53,7 +54,7 @@ export function createSessionCatalog(deps) {
   return {
     /** 当前是否至少有一种会话来源可用。 */
     available() {
-      return typeof ctx?.agents?.roots === "function" || store() !== undefined;
+      return typeof serviceOf(ctx, "agents")?.roots === "function" || store() !== undefined;
     },
 
     /**
@@ -66,7 +67,10 @@ export function createSessionCatalog(deps) {
       const byId = new Map();
       const sources = [];
 
-      const roots = attempt(() => (typeof ctx?.agents?.roots === "function" ? ctx.agents.roots() : []));
+      const roots = attempt(() => {
+        const agents = serviceOf(ctx, "agents");
+        return typeof agents?.roots === "function" ? agents.roots() : [];
+      });
       if (roots.ok) {
         const agents = Array.isArray(roots.value) ? roots.value : [];
         sources.push("agents.roots");

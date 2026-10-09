@@ -59,12 +59,22 @@ const TASK = {
   profile: "户外装备号",
 };
 
+/**
+ * 假插件上下文。
+ *
+ * 真实 cordis 上下文**只允许**读取静态 `inject` 里声明过的服务属性，其余服务一律经
+ * `ctx.get(name)` 读取（未提供时返回 undefined）；测试替身照此实现，否则测出来的
+ * 行为与宿主运行时不符。
+ */
+function makeCtx(services = {}) {
+  return { ...services, get: (name) => services[name] };
+}
+
 describe("排期标题", () => {
   it("前缀固定，便于在 DSH 排期列表里识别工作台排期", () => {
     assert.equal(EASEL_SCHEDULE_PREFIX, "Easel｜");
     assert.equal(scheduleTitle("露营装备测评"), "Easel｜露营装备测评");
   });
-
   it("超长主题截断到 DSH 的 120 字标题上限之内", () => {
     const title = scheduleTitle("主".repeat(200));
     assert.equal([...title].length <= 120, true);
@@ -174,7 +184,7 @@ describe("scheduleView", () => {
 
 describe("createScheduleService", () => {
   it("没有 DSH 排期能力时 available() 为 false，并给出可读原因", async () => {
-    for (const ctx of [{}, { schedule: {} }, { schedule: { create() {} } }, { schedule: { catalog() {} } }]) {
+    for (const ctx of [{}, { schedule: {} }, { schedule: { create() {} } }, { schedule: { catalog() {} } }].map(makeCtx)) {
       const service = createScheduleService({ ctx });
       assert.equal(service.available(), false);
       await assert.rejects(
@@ -185,18 +195,18 @@ describe("createScheduleService", () => {
   });
 
   it("能力齐备时 available() 为 true", () => {
-    const service = createScheduleService({ ctx: { schedule: fakeSchedule() } });
+    const service = createScheduleService({ ctx: makeCtx({ schedule: fakeSchedule() }) });
     assert.equal(service.available(), true);
   });
 
   it("list 只返回工作台创建的排期项，并统计生效中的数量", async () => {
-    const ctx = {
+    const ctx = makeCtx({
       schedule: fakeSchedule([
         { id: "a", title: "Easel｜露营", status: "active" },
         { id: "b", title: "Easel｜露营", status: "paused" },
         { id: "c", title: "别处的提醒", status: "active" },
       ]),
-    };
+    });
     const service = createScheduleService({ ctx });
     const result = await service.list();
     assert.deepEqual(result.items.map((item) => item.id), ["a", "b"]);
@@ -206,7 +216,7 @@ describe("createScheduleService", () => {
   });
 
   it("create 必须绑定会话，并把请求原样交给 DSH", async () => {
-    const ctx = { schedule: fakeSchedule() };
+    const ctx = makeCtx({ schedule: fakeSchedule() });
     const service = createScheduleService({ ctx });
 
     await assert.rejects(
@@ -236,7 +246,7 @@ describe("createScheduleService", () => {
   });
 
   it("remove 需要排期标识与绑定会话，并转交 DSH 删除", async () => {
-    const ctx = { schedule: fakeSchedule() };
+    const ctx = makeCtx({ schedule: fakeSchedule() });
     const service = createScheduleService({ ctx });
 
     await assert.rejects(
@@ -249,7 +259,7 @@ describe("createScheduleService", () => {
   });
 
   it("update 需要 expected（乐观锁），且说明仍受自包含约束", async () => {
-    const ctx = { schedule: fakeSchedule() };
+    const ctx = makeCtx({ schedule: fakeSchedule() });
     const service = createScheduleService({ ctx });
 
     await assert.rejects(

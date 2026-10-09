@@ -30,6 +30,7 @@
   "common.unknown": "Unknown",
   "boundary.title": "This section is unavailable",
   "boundary.detail": "Error: {message}",
+  "error.hostNotMounted": "Host service is not mounted: reload or restart DSH, then retry.",
   "overview.profiles": "Personas",
   "overview.artifacts": "Content artifacts",
   "overview.accounts": "Signed-in accounts",

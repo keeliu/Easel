@@ -15,6 +15,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { EaselError, ERROR_CODES, attempt } from "./errors.js";
+import { serviceOf } from "./services.js";
 
 /** 路由前缀。 */
 export const API_PREFIX = "/easel-workbench/api";
@@ -233,7 +234,7 @@ export function createWebService(deps) {
     taskDispatchTarget: runtime.taskDispatchTarget,
     personaSource: runtime.personaSource,
     rulesSource: runtime.rulesSource,
-    presetsAvailable: typeof ctx?.agentPresets?.register === "function",
+    presetsAvailable: typeof serviceOf(ctx, "agentPresets")?.register === "function",
   }));
 
   router.get("/selfcheck", async () => selfcheck.run());
@@ -378,8 +379,9 @@ export function createWebService(deps) {
 
     /** 注册到 webServer；返回注销函数。 */
     register() {
-      if (typeof ctx?.webServer?.register !== "function") return undefined;
-      return ctx.webServer.register({
+      const webServer = serviceOf(ctx, "webServer");
+      if (typeof webServer?.register !== "function") return undefined;
+      return webServer.register({
         kind: "prefix",
         path: API_PREFIX,
         handler: (req, res) => this.handle(req, res),

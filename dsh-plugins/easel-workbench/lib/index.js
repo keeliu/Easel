@@ -34,6 +34,7 @@ import { createPersonaService } from "./host/persona.js";
 import { createPublishService } from "./host/publish.js";
 import { createScheduleService } from "./host/schedule.js";
 import { createSelfcheckService } from "./host/selfcheck.js";
+import { serviceOf } from "./host/services.js";
 import { createSessionCatalog } from "./host/sessions.js";
 import { createPublishGuard } from "./host/tools.js";
 import { createTrendsService } from "./host/trends.js";
@@ -114,7 +115,7 @@ export function apply(ctx, rawConfig) {
     return located.path;
   };
 
-  const subprocess = ctx?.subprocess;
+  const subprocess = serviceOf(ctx, "subprocess");
   const data = createDataService({ paths, runtime });
   const gate = createGateService({ runtime, subprocess, resolvePython });
   const persona = createPersonaService({ runtime });
