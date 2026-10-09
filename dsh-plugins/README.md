@@ -225,6 +225,8 @@ GET    /topics              POST /topics              PATCH /topics/:id   DELETE
 GET    /trends
 GET    /accounts            GET  /accounts/:id        GET /accounts/:id/stats
 POST   /accounts/:id/verify POST /accounts/:id/login-plan
+POST   /accounts/:id/login  GET  /accounts/:id/login/status  DELETE /accounts/:id/login
+POST   /accounts/:id/login/sms  GET /accounts/:id/qr
 GET    /publish/platforms   GET  /publish/history
 POST   /publish/preview     POST /publish/execute
 GET    /schedule            POST /schedule            DELETE /schedule/:id
@@ -242,6 +244,12 @@ GET    /files?path=…&download=1
 **插件内没有调度器**：没有 `setInterval`、没有 cron 依赖、没有子进程定时器（有防回归测试扫描源码）。
 到点触发时任务说明是自包含的（含任务目标、目标画像、期望产物，且不含会话标识与临时路径），
 因此在新会话里也能被独立理解。在 DSH 排期界面暂停/删除后，工作台视图同步反映。
+
+日历区域可以**登记**与**删除**排期（`POST /schedule`、`DELETE /schedule/:id`）：填主题、任务目标与期望产物，
+再选一个投递会话和重复方式（每天 / 每周 / 只一次）。两点是刻意的：① 正因为识别靠 `Easel｜` 前缀，
+在 DSH 自己的排期界面里建的条目**不会**出现在工作台里，所以面板必须自己提供入口，否则日历永远是空的；
+② 删除必须同时给 `id` 与 `sessionId`（`lib/host/schedule.js:remove` 会校验会话绑定），因此没有会话绑定的
+条目不渲染删除按钮。时区默认取浏览器所在时区，取不到才回落 `Asia/Shanghai`，没有写死。
 
 ### 6.4 技能根与目录成本（任务 1.3 / 9.5）
 

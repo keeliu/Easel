@@ -183,6 +183,10 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
 
 「解释器可执行」不是「脚本能跑」：工作台的受控 venv 由引导脚本按分组安装，本机当初只装了 `core`，而六个平台的登录脚本都 `import playwright`。宿主因此新增 `lib/host/runtime.js:probePythonPackages()`——用 `importlib.util.find_spec` 查询而**不真正 import**（`biliup` 会拉起一串子模块，自检不该付这个开销、也不该承担副作用），并把它接到自检的 `publish-deps` 条目上。分两级是刻意的：`playwright` 缺失报 `missing`（扫码登录与六个平台发布的必经之路），只缺 `biliup`/`requests`/`beautifulsoup4` 报 `degraded`（只影响 B 站上传与资讯类技能）——否则一个不影响登录的包会把「工作台基本可用」误判成不可用。没有解释器时该条目不谎报某个包缺失，而是指向「Python 运行时」那一条，也不发起注定失败的子进程。
 
+### D25：排期入口必须由面板自己提供（`Easel｜` 前缀既是识别手段，也是可见性边界）
+
+工作台只把标题以 `Easel｜` 开头的 DSH 排期项算成自己的（`lib/host/schedule.js:isEaselSchedule`）。这条规则有个直接后果：**用户在 DSH 自己的排期界面里建的排期永远不会出现在工作台的日历里**，而面板此前只有列表、没有创建入口（宿主 `POST /schedule` 一直存在），于是「日历」对任何用户都是永久空态——空态指引说的「登记排期」根本没有可点的地方。结论是把创建与删除入口放进日历区，并刻意收窄各方的职责：本地校验只判「空不空」（时间与时区是否合法交给 DSH，不在客户端重写时段规则），时区默认取浏览器时区而不是写死 `Asia/Shanghai`，删除只在条目确实带会话绑定时才渲染（`lib/host/schedule.js:remove` 要求 `id` 与 `sessionId` 同时到位，点了必然报错的按钮比没有按钮更糟）。
+
 ### 安装与激活实测记录（2026-10-09）
 
 - **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。

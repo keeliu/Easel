@@ -142,8 +142,34 @@ window.__ModuleLoader__.load({
       "publish.title": "标题",
       "publish.titleRequired": "发布必须有标题。",
       "publish.topic": "内容主题",
-      "schedule.emptyHint": "日历读取 DSH 的排期与工作台登记的日程；派发任务或登记排期后会出现在这里。",
+      "schedule.create": "登记排期",
+      "schedule.created": "已登记，列表中可见。",
+      "schedule.createdAt": "已登记，首次触发时间：{at}",
+      "schedule.date": "日期",
+      "schedule.delete": "删除",
+      "schedule.deliverable": "期望产物",
+      "schedule.deliverablePlaceholder": "例如：3 条口播脚本（含标题与封面文案）",
+      "schedule.emptyHint": "上面「登记排期」提交后，排期项会出现在这里；在 DSH 的排期界面暂停或删除后，这里会同步。",
+      "schedule.goal": "任务目标",
+      "schedule.goalPlaceholder": "每次触发要做什么",
+      "schedule.list": "已登记的排期",
+      "schedule.missing": "请填写：{fields}",
+      "schedule.mode": "重复方式",
+      "schedule.modeDaily": "每天",
+      "schedule.modeOnce": "只一次",
+      "schedule.modeWeekly": "每周",
+      "schedule.noSessions": "排期到点后会在绑定的会话里执行；先在 DSH 里开一个会话，再回来登记。",
       "schedule.openSession": "打开会话",
+      "schedule.session": "投递到会话",
+      "schedule.sessionPlaceholder": "选择一个会话",
+      "schedule.submit": "登记排期",
+      "schedule.submitting": "提交中…",
+      "schedule.time": "时间（HH:MM）",
+      "schedule.topic": "主题",
+      "schedule.topicPlaceholder": "例如：每周三条 AI 工具短视频",
+      "schedule.weekday": "星期",
+      "schedule.weekdays": "周一,周二,周三,周四,周五,周六,周日",
+      "schedule.zone": "时区",
       "selfcheck.blockedWrites": "被拒绝的越界写入：{count}",
       "selfcheck.ffmpeg": "ffmpeg",
       "selfcheck.missing": "缺失",
@@ -311,8 +337,34 @@ window.__ModuleLoader__.load({
       "publish.title": "Title",
       "publish.titleRequired": "A title is required.",
       "publish.topic": "Content project",
-      "schedule.emptyHint": "The calendar reads DSH schedules and workbench entries; dispatch a task or add a schedule and it will appear here.",
+      "schedule.create": "Add a schedule",
+      "schedule.created": "Added; it now appears in the list.",
+      "schedule.createdAt": "Added; first run: {at}",
+      "schedule.date": "Date",
+      "schedule.delete": "Delete",
+      "schedule.deliverable": "Expected output",
+      "schedule.deliverablePlaceholder": "e.g. 3 scripts with titles and cover copy",
+      "schedule.emptyHint": "Submit the form above and the item appears here; pausing or deleting it in DSH is reflected here.",
+      "schedule.goal": "Task goal",
+      "schedule.goalPlaceholder": "What each run should produce",
+      "schedule.list": "Scheduled items",
+      "schedule.missing": "Please fill in: {fields}",
+      "schedule.mode": "Repeat",
+      "schedule.modeDaily": "Daily",
+      "schedule.modeOnce": "Once",
+      "schedule.modeWeekly": "Weekly",
+      "schedule.noSessions": "Scheduled runs execute in the bound session; create a session in DSH first.",
       "schedule.openSession": "Open session",
+      "schedule.session": "Deliver to session",
+      "schedule.sessionPlaceholder": "Pick a session",
+      "schedule.submit": "Add schedule",
+      "schedule.submitting": "Submitting…",
+      "schedule.time": "Time (HH:MM)",
+      "schedule.topic": "Topic",
+      "schedule.topicPlaceholder": "e.g. three AI-tool shorts a week",
+      "schedule.weekday": "Weekday",
+      "schedule.weekdays": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+      "schedule.zone": "Time zone",
       "selfcheck.blockedWrites": "Rejected out-of-scope writes: {count}",
       "selfcheck.ffmpeg": "ffmpeg",
       "selfcheck.missing": "Missing",
@@ -449,7 +501,9 @@ window.__ModuleLoader__.load({
       ".easel-form-column{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:0}",
       ".easel-field{display:flex;flex-direction:column;gap:4px}",
       ".easel-field-label{font-size:12px;color:var(--dsw-alias-label-secondary)}",
-      ".easel-dispatch{display:flex;flex-direction:column;gap:8px;width:100%;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:10px;background:var(--dsw-alias-bg-base)}",
+      ".easel-dispatch,.easel-schedule{display:flex;flex-direction:column;gap:8px;width:100%;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:10px;background:var(--dsw-alias-bg-base)}",
+      ".easel-inline-fields{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}",
+      ".easel-inline-fields .easel-field{flex:1 1 120px;min-width:120px}",
       ".easel-textarea{font:inherit;min-height:140px;resize:vertical;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:8px 10px}",
       ".easel-login{display:flex;flex-direction:column;gap:8px;width:100%;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:10px;background:var(--dsw-alias-bg-base)}",
       ".easel-qr{width:200px;height:200px;image-rendering:pixelated;align-self:flex-start;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}",
@@ -1661,45 +1715,414 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 登记排期：日历区原来只能「看」。工作台的排期列表只认标题带 `Easel｜` 前缀的条目
+     * （宿主 `lib/host/schedule.js:isEaselSchedule`），而 DSH 自己的排期界面建出来的条目
+     * 不带这个前缀，于是「日历」从来不会有内容——空态指引指的就是「登记排期」，但入口
+     * 一直不存在。宿主 `POST /schedule` 早就能建（`lib/host/schedule.js:create`），这里
+     * 把「要重复做什么」收成三项必填（主题、任务目标、期望产物），加上排期唯一不可省的
+     * 外部条件——**投递到哪个会话**（DSH 排期按会话投递），以及定时方式。
+     *
+     * 定时字段原样透传（宿主 `TIMING_KEYS`：`after_seconds`/`at`/`every_seconds`/`daily`/
+     * `weekly`/`cron`，必须恰好给一个），时间与时区是否合法由 DSH 排期服务判定，插件不重复实现。
+     * 时区默认取浏览器所在时区，取不到才回落到 `Asia/Shanghai`——不写死。
+     */
+    function ScheduleForm(props) {
+      var t = props.t;
+      var api = props.api;
+      var browserZone =
+        typeof Intl !== "undefined" && Intl.DateTimeFormat !== undefined
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone
+          : "";
+      var fieldsTuple = React.useState({
+        topic: "",
+        goal: "",
+        deliverable: "",
+        profile: "",
+        platform: "",
+        mode: "daily",
+        time: "09:00",
+        weekday: "1",
+        date: "",
+        timeZone: browserZone === undefined || browserZone === null || browserZone === "" ? "Asia/Shanghai" : browserZone,
+      });
+      var fields = fieldsTuple[0];
+      var setFields = fieldsTuple[1];
+      var sessionTuple = React.useState("");
+      var session = sessionTuple[0];
+      var setSession = sessionTuple[1];
+      var statusTuple = React.useState({ status: "idle", message: "", at: "" });
+      var status = statusTuple[0];
+      var setStatus = statusTuple[1];
+      var sessions = useEndpoint(api, "/sessions");
+
+      function setField(name, value) {
+        setFields(function (previous) {
+          var next = {};
+          Object.keys(previous).forEach(function (key) {
+            next[key] = previous[key];
+          });
+          next[name] = value;
+          return next;
+        });
+        setStatus({ status: "idle", message: "", at: "" });
+      }
+
+      function change(name) {
+        return function (event) {
+          setField(name, event.target.value);
+        };
+      }
+
+      function timingOf() {
+        var clock = String(fields.time).trim();
+        var at = clock.length === 5 ? clock + ":00" : clock;
+        var zone = String(fields.timeZone).trim();
+        if (fields.mode === "weekly") {
+          var weekday = Number(fields.weekday);
+          return { weekly: { time: at, time_zone: zone, weekdays: [weekday >= 1 && weekday <= 7 ? weekday : 1] } };
+        }
+        if (fields.mode === "once") return { at: { date: String(fields.date).trim(), time: at, time_zone: zone } };
+        return { daily: { time: at, time_zone: zone } };
+      }
+
+      /**
+       * 本地先拦一遍：省一次注定被宿主拒掉的往返，也让「哪个框没填」在提交前就说清楚。
+       * 这里只做「空不空」的判断，时间与时区的合法性留给 DSH。
+       */
+      function submit(event) {
+        event.preventDefault();
+        var missing = [];
+        if (String(fields.topic).trim() === "") missing.push("schedule.topic");
+        if (String(fields.goal).trim() === "") missing.push("schedule.goal");
+        if (String(fields.deliverable).trim() === "") missing.push("schedule.deliverable");
+        if (session === "") missing.push("schedule.session");
+        if (String(fields.time).trim() === "") missing.push("schedule.time");
+        if (fields.mode === "once" && String(fields.date).trim() === "") missing.push("schedule.date");
+        if (missing.length > 0) {
+          setStatus({
+            status: "failed",
+            message: t("schedule.missing", {
+              fields: missing
+                .map(function (key) {
+                  return t(key);
+                })
+                .join("、"),
+            }),
+            at: "",
+          });
+          return;
+        }
+        var task = {
+          goal: String(fields.goal).trim(),
+          deliverable: String(fields.deliverable).trim(),
+        };
+        var profile = String(fields.profile).trim();
+        var platform = String(fields.platform).trim();
+        if (profile !== "") task.profile = profile;
+        if (platform !== "") task.platform = platform;
+        var body = { topic: String(fields.topic).trim(), sessionId: session, task: task };
+        var timing = timingOf();
+        Object.keys(timing).forEach(function (key) {
+          body[key] = timing[key];
+        });
+        setStatus({ status: "running", message: "", at: "" });
+        api("/schedule", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (payload) {
+            var record = payload === null || payload === undefined ? null : payload.record;
+            setStatus({
+              status: "done",
+              message: "",
+              at: record !== null && record !== undefined && record.scheduledAt !== undefined && record.scheduledAt !== null ? String(record.scheduledAt) : "",
+            });
+            if (typeof props.onCreated === "function") props.onCreated();
+          })
+          .catch(function (error) {
+            setStatus({ status: "failed", message: errorMessage(error), at: "" });
+          });
+      }
+
+      var sessionOptions = [];
+      if (sessions.status === "ready" && sessions.data !== null && Array.isArray(sessions.data.sessions)) {
+        sessions.data.sessions.forEach(function (item) {
+          if (item === null || item === undefined || typeof item.id !== "string") return;
+          sessionOptions.push({
+            id: item.id,
+            label:
+              (item.title === undefined || item.title === null ? item.id : String(item.title)) +
+              "（" +
+              t(item.running === true ? "dispatch.running" : "dispatch.idle") +
+              "）",
+          });
+        });
+      }
+      var weekdays = t("schedule.weekdays").split(",");
+
+      return h(
+        "form",
+        { className: "easel-schedule", "data-easel-schedule-form": "", onSubmit: submit },
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("schedule.topic")),
+          h("input", {
+            className: "easel-input",
+            "data-easel-schedule-topic": "",
+            value: fields.topic,
+            placeholder: t("schedule.topicPlaceholder"),
+            onChange: change("topic"),
+          }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("schedule.goal")),
+          h("input", {
+            className: "easel-input",
+            "data-easel-schedule-goal": "",
+            value: fields.goal,
+            placeholder: t("schedule.goalPlaceholder"),
+            onChange: change("goal"),
+          }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("schedule.deliverable")),
+          h("input", {
+            className: "easel-input",
+            "data-easel-schedule-deliverable": "",
+            value: fields.deliverable,
+            placeholder: t("schedule.deliverablePlaceholder"),
+            onChange: change("deliverable"),
+          }),
+        ),
+        h(
+          "div",
+          { className: "easel-inline-fields" },
+          h(
+            "label",
+            { className: "easel-field" },
+            h("span", { className: "easel-field-label" }, t("dispatch.profile")),
+            h("input", { className: "easel-input", "data-easel-schedule-profile": "", value: fields.profile, onChange: change("profile") }),
+          ),
+          h(
+            "label",
+            { className: "easel-field" },
+            h("span", { className: "easel-field-label" }, t("dispatch.platform")),
+            h("input", { className: "easel-input", "data-easel-schedule-platform": "", value: fields.platform, onChange: change("platform") }),
+          ),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("schedule.session")),
+          h(
+            "select",
+            {
+              className: "easel-input",
+              "data-easel-schedule-session": "",
+              value: session,
+              onChange: function (event) {
+                setSession(event.target.value);
+                setStatus({ status: "idle", message: "", at: "" });
+              },
+            },
+            [{ id: "", label: t("schedule.sessionPlaceholder") }]
+              .concat(sessionOptions)
+              .map(function (option) {
+                return h("option", { key: option.id, value: option.id }, option.label);
+              }),
+          ),
+        ),
+        sessions.status === "error" || sessionOptions.length === 0
+          ? h("p", { className: "easel-hint", "data-easel-schedule-sessions": "" }, t("schedule.noSessions"))
+          : null,
+        h(
+          "div",
+          { className: "easel-inline-fields" },
+          h(
+            "label",
+            { className: "easel-field" },
+            h("span", { className: "easel-field-label" }, t("schedule.mode")),
+            h(
+              "select",
+              {
+                className: "easel-input",
+                "data-easel-schedule-mode": "",
+                value: fields.mode,
+                onChange: change("mode"),
+              },
+              [
+                { id: "daily", label: t("schedule.modeDaily") },
+                { id: "weekly", label: t("schedule.modeWeekly") },
+                { id: "once", label: t("schedule.modeOnce") },
+              ].map(function (option) {
+                return h("option", { key: option.id, value: option.id }, option.label);
+              }),
+            ),
+          ),
+          fields.mode === "weekly"
+            ? h(
+                "label",
+                { className: "easel-field" },
+                h("span", { className: "easel-field-label" }, t("schedule.weekday")),
+                h(
+                  "select",
+                  {
+                    className: "easel-input",
+                    "data-easel-schedule-weekday": "",
+                    value: fields.weekday,
+                    onChange: change("weekday"),
+                  },
+                  weekdays.map(function (label, index) {
+                    var value = String(index + 1);
+                    return h("option", { key: value, value: value }, label);
+                  }),
+                ),
+              )
+            : null,
+          fields.mode === "once"
+            ? h(
+                "label",
+                { className: "easel-field" },
+                h("span", { className: "easel-field-label" }, t("schedule.date")),
+                h("input", { type: "date", className: "easel-input", "data-easel-schedule-date": "", value: fields.date, onChange: change("date") }),
+              )
+            : null,
+          h(
+            "label",
+            { className: "easel-field" },
+            h("span", { className: "easel-field-label" }, t("schedule.time")),
+            h("input", { type: "time", className: "easel-input", "data-easel-schedule-time": "", value: fields.time, onChange: change("time") }),
+          ),
+          h(
+            "label",
+            { className: "easel-field" },
+            h("span", { className: "easel-field-label" }, t("schedule.zone")),
+            h("input", { className: "easel-input", "data-easel-schedule-zone": "", value: fields.timeZone, onChange: change("timeZone") }),
+          ),
+        ),
+        h(
+          "div",
+          { className: "easel-actions" },
+          h(
+            "button",
+            { type: "submit", className: "easel-button", "data-easel-schedule-submit": "", disabled: status.status === "running" },
+            status.status === "running" ? t("schedule.submitting") : t("schedule.submit"),
+          ),
+        ),
+        status.status === "failed" ? h("p", { className: "easel-error-text", "data-easel-schedule-error": "" }, status.message) : null,
+        status.status === "done"
+          ? h(
+              "p",
+              { className: "easel-hint", "data-easel-schedule-done": "" },
+              status.at === "" ? t("schedule.created") : t("schedule.createdAt", { at: status.at }),
+            )
+          : null,
+      );
+    }
+
     function CalendarRegion(props) {
       var t = props.t;
       var state = useEndpoint(props.api, "/schedule");
-      return h(Resource, { state: state, t: t }, function (data) {
-        var items = Array.isArray(data.items) ? data.items : [];
-        if (items.length === 0) return h(EmptyState, { t: t, hintKey: "schedule.emptyHint" });
-        return h(
-          "ul",
-          { className: "easel-list" },
-          items.map(function (item, index) {
+      var failureTuple = React.useState({ id: null, message: "" });
+      var failure = failureTuple[0];
+      var setFailure = failureTuple[1];
+
+      /**
+       * 删除：DSH 的排期按会话投递，所以宿主 `schedule.remove` 同时要 `id` 与 `sessionId`
+       * （`lib/host/schedule.js:remove`）。条目没有会话绑定时不渲染删除按钮——点了必然报错。
+       */
+      function remove(item) {
+        return function () {
+          setFailure({ id: item.id, message: "" });
+          props
+            .api("/schedule/" + encodeURIComponent(String(item.id)), {
+              method: "DELETE",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ id: item.id, sessionId: item.sessionId }),
+            })
+            .then(function () {
+              setFailure({ id: null, message: "" });
+              state.reload();
+            })
+            .catch(function (error) {
+              setFailure({ id: item.id, message: errorMessage(error) });
+            });
+        };
+      }
+
+      return h(
+        "div",
+        null,
+        h(
+          Section,
+          { title: t("schedule.create") },
+          h(ScheduleForm, {
+            t: t,
+            api: props.api,
+            onCreated: function () {
+              state.reload();
+            },
+          }),
+        ),
+        h(
+          Section,
+          { title: t("schedule.list") },
+          h(Resource, { state: state, t: t }, function (data) {
+            var items = Array.isArray(data.items) ? data.items : [];
+            if (items.length === 0) return h(EmptyState, { t: t, hintKey: "schedule.emptyHint" });
             return h(
-              "li",
-              { className: "easel-row", key: String(item.id === undefined ? index : item.id) },
-              h(
-                "div",
-                { className: "easel-row-main" },
-                h("span", { className: "easel-row-title" }, String(item.topic || item.title || item.id || "")),
-                h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, item.status), valueLabel(t, item.kind), item.scheduledAt])),
-              ),
-              h("span", { className: "easel-tag easel-state-" + String(item.status) }, valueLabel(t, item.status)),
-              // 只有真的记下了 sessionId 的条目才给入口：点了没目标的按钮比没有按钮更糟。
-              typeof item.sessionId === "string" && item.sessionId !== ""
-                ? h(
-                    "button",
-                    {
-                      type: "button",
-                      className: "easel-button",
-                      "data-easel-open-session": item.sessionId,
-                      onClick: function () {
-                        props.openSession(item.sessionId);
-                      },
-                    },
-                    t("schedule.openSession"),
-                  )
-                : null,
+              "ul",
+              { className: "easel-list" },
+              items.map(function (item, index) {
+                return h(
+                  "li",
+                  { className: "easel-row", key: String(item.id === undefined ? index : item.id) },
+                  h(
+                    "div",
+                    { className: "easel-row-main" },
+                    h("span", { className: "easel-row-title" }, String(item.topic || item.title || item.id || "")),
+                    h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, item.status), valueLabel(t, item.kind), item.scheduledAt])),
+                  ),
+                  h("span", { className: "easel-tag easel-state-" + String(item.status) }, valueLabel(t, item.status)),
+                  // 只有真的记下了 sessionId 的条目才给入口：点了没目标的按钮比没有按钮更糟。
+                  typeof item.sessionId === "string" && item.sessionId !== ""
+                    ? h(
+                        "button",
+                        {
+                          type: "button",
+                          className: "easel-button",
+                          "data-easel-open-session": item.sessionId,
+                          onClick: function () {
+                            props.openSession(item.sessionId);
+                          },
+                        },
+                        t("schedule.openSession"),
+                      )
+                    : null,
+                  typeof item.sessionId === "string" && item.sessionId !== ""
+                    ? h(
+                        "button",
+                        {
+                          type: "button",
+                          className: "easel-button",
+                          "data-easel-schedule-delete": String(item.id),
+                          onClick: remove(item),
+                        },
+                        t("schedule.delete"),
+                      )
+                    : null,
+                  failure.id !== null && String(failure.id) === String(item.id)
+                    ? h("span", { className: "easel-error-text", "data-easel-schedule-delete-error": "" }, failure.message)
+                    : null,
+                );
+              }),
             );
           }),
-        );
-      });
+        ),
+      );
     }
 
     /**

@@ -708,7 +708,7 @@ test("空白区域给出「怎么才会有数据」的下一步，而不是只�
 
   const expectations = [
     ["topics", /选题是派发的起点/],
-    ["calendar", /日历读取 DSH 的排期/],
+    ["calendar", /登记排期/],
     ["trends", /热点来自上游技能的联网抓取/],
     ["library", /内容库列出 outputs\//],
     ["profiles", /profiles\/<名称>\//],
@@ -1087,3 +1087,146 @@ test("热点：可选来源用 ?ids= 传给宿主，线索能存进选题库", a
   await view.unmount();
 });
 
+
+test("登记排期：必填项本地就拦下，定时字段按 DSH 的形状原样透传", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    const method = options?.method ?? "GET";
+    calls.push({ url: target, method, options: options ?? null });
+    if (target.includes("/sessions")) {
+      return { status: 200, json: async () => ({ ok: true, sessions: [{ id: "s-1", title: "内容工厂", running: false }] }) };
+    }
+    if (target.includes("/schedule") && method === "POST") {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          record: { id: "sch-1", title: "Easel｜春季选题", scheduledAt: "2026-10-10T01:00:00.000Z" },
+          sessionId: "s-1",
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true, items: [], total: 0, active: 0 }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="calendar"]'));
+  await flush();
+
+  const posts = () => calls.filter((call) => call.url.includes("/schedule") && call.method === "POST");
+  const reads = () => calls.filter((call) => call.url.includes("/schedule") && call.method === "GET");
+  assert.equal(reads().length, 1, "挂载时读一次排期列表");
+
+  // 一项没填就提交：本地拦下，一个请求都不发。
+  await click(view.container.querySelector("[data-easel-schedule-submit]"));
+  await flush();
+  assert.equal(posts().length, 0, "缺项时不应该发请求");
+  const error = view.container.querySelector("[data-easel-schedule-error]");
+  assert.match(error.textContent, /请填写：主题/);
+  assert.match(error.textContent, /投递到会话/);
+
+  await setValue(view.container.querySelector("[data-easel-schedule-topic]"), "春季选题");
+  await setValue(view.container.querySelector("[data-easel-schedule-goal]"), "产出三条口播脚本");
+  await setValue(view.container.querySelector("[data-easel-schedule-deliverable]"), "3 条脚本");
+  await setValue(view.container.querySelector("[data-easel-schedule-session]"), "s-1");
+  await setValue(view.container.querySelector("[data-easel-schedule-zone]"), "Asia/Shanghai");
+  await setValue(view.container.querySelector("[data-easel-schedule-time]"), "08:30");
+  await click(view.container.querySelector("[data-easel-schedule-submit]"));
+  await flush();
+
+  assert.equal(posts().length, 1);
+  assert.deepEqual(JSON.parse(posts()[0].options.body), {
+    topic: "春季选题",
+    sessionId: "s-1",
+    task: { goal: "产出三条口播脚本", deliverable: "3 条脚本" },
+    daily: { time: "08:30:00", time_zone: "Asia/Shanghai" },
+  });
+  assert.match(view.container.querySelector("[data-easel-schedule-done]").textContent, /2026-10-10T01:00:00\.000Z/);
+  assert.equal(reads().length, 2, "登记成功后要刷新列表");
+
+  // 每周：多一个星期字段，字段名与 DSH 的 weekly 一致。
+  await setValue(view.container.querySelector("[data-easel-schedule-mode]"), "weekly");
+  await setValue(view.container.querySelector("[data-easel-schedule-weekday]"), "3");
+  await click(view.container.querySelector("[data-easel-schedule-submit]"));
+  await flush();
+  assert.deepEqual(JSON.parse(posts()[1].options.body).weekly, {
+    time: "08:30:00",
+    time_zone: "Asia/Shanghai",
+    weekdays: [3],
+  });
+
+  // 只一次：给出日期，用 DSH 的 at 形态；同一时刻只能有一个定时字段。
+  await setValue(view.container.querySelector("[data-easel-schedule-mode]"), "once");
+  await setValue(view.container.querySelector("[data-easel-schedule-date]"), "2026-11-01");
+  await click(view.container.querySelector("[data-easel-schedule-submit]"));
+  await flush();
+  const once = JSON.parse(posts()[2].options.body);
+  assert.deepEqual(once.at, { date: "2026-11-01", time: "08:30:00", time_zone: "Asia/Shanghai" });
+  assert.equal(once.daily, undefined, "不能同时给出两个定时字段");
+
+  await view.unmount();
+});
+
+test("排期条目可以删除，没有会话绑定的条目不显示删除按钮", async () => {
+  const calls = [];
+  let failDelete = false;
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    const method = options?.method ?? "GET";
+    calls.push({ url: target, method, options: options ?? null });
+    if (target.includes("/sessions")) return { status: 200, json: async () => ({ ok: true, sessions: [] }) };
+    if (method === "DELETE") {
+      if (failDelete) {
+        return { status: 409, json: async () => ({ ok: false, code: "schedule-conflict", message: "DSH 拒绝了这次删除。" }) };
+      }
+      return { status: 200, json: async () => ({ ok: true, removed: "sch-1" }) };
+    }
+    return {
+      status: 200,
+      json: async () => ({
+        ok: true,
+        items: [
+          { id: "sch-1", topic: "春季选题", status: "active", kind: "daily", scheduledAt: "2026-10-10T01:00:00.000Z", sessionId: "s-1" },
+          { id: "sch-2", topic: "无会话", status: "paused", kind: "daily", scheduledAt: "2026-10-11T01:00:00.000Z", sessionId: null },
+        ],
+        total: 2,
+        active: 1,
+      }),
+    };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="calendar"]'));
+  await flush();
+
+  assert.equal(
+    view.container.querySelector('[data-easel-schedule-delete="sch-2"]'),
+    null,
+    "没有会话绑定就不该有删除按钮（宿主删除必须带 sessionId）",
+  );
+
+  await click(view.container.querySelector('[data-easel-schedule-delete="sch-1"]'));
+  await flush();
+  const deletes = calls.filter((call) => call.method === "DELETE");
+  assert.equal(deletes.length, 1);
+  assert.match(deletes[0].url, /\/schedule\/sch-1$/);
+  assert.deepEqual(JSON.parse(deletes[0].options.body), { id: "sch-1", sessionId: "s-1" });
+  assert.equal(view.container.querySelector("[data-easel-schedule-delete-error]"), null, "成功时不显示错误");
+
+  failDelete = true;
+  await click(view.container.querySelector('[data-easel-schedule-delete="sch-1"]'));
+  await flush();
+  assert.match(
+    view.container.querySelector("[data-easel-schedule-delete-error]").textContent,
+    /DSH 拒绝了这次删除/,
+  );
+
+  await view.unmount();
+});
