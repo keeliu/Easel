@@ -33,7 +33,9 @@ window.__ModuleLoader__.load({
     // 构建脚本把本行替换为从 locale/zh-CN.json、locale/en.json 生成的内联字典。
     // 浏览器侧只有 zh / en 两个内置 locale id，`zh-CN` 不是其中之一。
     var DICT_ZH = {
+      "accounts.emptyHint": "这里列出七个平台的登录态：未授权的条目点「验证」会给出扫码或授权指引。",
       "accounts.verify": "验证",
+      "analytics.emptyHint": "还没有发布记录：用「发布」把产物发到平台后，这里会汇总成功与失败。",
       "analytics.records": "发布记录",
       "analytics.succeeded": "成功发布",
       "analytics.successRate": "成功率",
@@ -54,8 +56,27 @@ window.__ModuleLoader__.load({
       "common.retry": "重试",
       "common.save": "保存",
       "common.unknown": "未知",
+      "dispatch.close": "收起",
+      "dispatch.deliverable": "期望产物（必填）",
+      "dispatch.deliverablePlaceholder": "例如：一篇 800 字小红书图文，含 3 张配图",
+      "dispatch.deliverableRequired": "请先写清期望产物：任务说明里这是必填项。",
+      "dispatch.done": "已派发到会话 {session}。",
+      "dispatch.idle": "已休眠",
+      "dispatch.newSession": "新会话",
+      "dispatch.notes": "补充说明（可选）",
+      "dispatch.openSession": "打开会话",
+      "dispatch.platform": "目标平台（可选）",
+      "dispatch.profile": "目标画像（可选）",
+      "dispatch.running": "运行中",
+      "dispatch.sending": "派发中…",
+      "dispatch.sessionsUnavailable": "暂时列不出既有会话，只能派发到新会话。",
+      "dispatch.submit": "派发",
+      "dispatch.target": "投递到",
       "error.hostNotMounted": "宿主服务未挂载：请重载或重启 DSH 后重试。",
       "library.download": "下载",
+      "library.emptyFiles": "这个主题下还没有产物：在「选题」里派发任务，或让会话把结果写进 outputs/<主题>/。",
+      "library.emptyHint": "内容库列出 outputs/<主题>/ 下的产物；把一条选题派发到会话并产出后，就会出现在这里。",
+      "library.pickProject": "在左侧选一个主题，查看它下面的文件。",
       "nav.accounts": "账号",
       "nav.analytics": "数据",
       "nav.calendar": "日历",
@@ -78,10 +99,19 @@ window.__ModuleLoader__.load({
       "panel.regions": "工作台区域",
       "panel.subtitle": "账号、画像、内容与发布集中在一个面板里",
       "panel.title": "自媒体工作台",
+      "profiles.cancel": "取消",
+      "profiles.create": "新建画像",
+      "profiles.createPlaceholder": "画像名称，例如 my-brand",
+      "profiles.edit": "编辑",
+      "profiles.emptyHint": "画像存在数据根的 profiles/<名称>/ 下；在上面填个名字点「新建画像」就会从 _template 复制六个维度。",
+      "profiles.pickProfile": "在左侧选一个画像，就能逐维度查看和编辑。",
+      "profiles.save": "保存",
+      "profiles.saved": "已保存 {dimension}（{bytes} 字节）。",
       "publish.failure": "失败",
       "publish.history": "发布记录",
       "publish.platforms": "发布平台",
       "publish.success": "成功",
+      "schedule.emptyHint": "日历读取 DSH 的排期与工作台登记的日程；派发任务或登记排期后会出现在这里。",
       "schedule.openSession": "打开会话",
       "selfcheck.blockedWrites": "被拒绝的越界写入：{count}",
       "selfcheck.ffmpeg": "ffmpeg",
@@ -96,7 +126,10 @@ window.__ModuleLoader__.load({
       "selfcheck.title": "环境自检",
       "selfcheck.upstreamReadOnly": "上游只读",
       "topics.add": "新增选题",
+      "topics.dispatch": "派发",
+      "topics.emptyHint": "选题是派发的起点：在上面写一句话就能加一条，然后点右侧「派发」把它变成一个会话里的任务。",
       "topics.title": "选题标题",
+      "trends.emptyHint": "热点来自上游技能的联网抓取：来源不可达或未配置时就是空的，可以点「重试」。",
       "trends.fetchedAt": "抓取时间",
       "value.audio": "音频",
       "value.authorized": "已授权",
@@ -123,7 +156,9 @@ window.__ModuleLoader__.load({
       "value.video": "视频",
     };
     var DICT_EN = {
+      "accounts.emptyHint": "All seven platforms appear here: for an unauthorized one, “Verify” gives the QR or authorization steps.",
       "accounts.verify": "Verify",
+      "analytics.emptyHint": "No publish records yet: once artifacts are published to a platform, this sums up successes and failures.",
       "analytics.records": "Records",
       "analytics.succeeded": "Succeeded",
       "analytics.successRate": "Success rate",
@@ -144,8 +179,27 @@ window.__ModuleLoader__.load({
       "common.retry": "Retry",
       "common.save": "Save",
       "common.unknown": "Unknown",
+      "dispatch.close": "Collapse",
+      "dispatch.deliverable": "Expected deliverable (required)",
+      "dispatch.deliverablePlaceholder": "e.g. an 800-word Xiaohongshu post with 3 images",
+      "dispatch.deliverableRequired": "Describe the expected deliverable first — the task brief requires it.",
+      "dispatch.done": "Dispatched to session {session}.",
+      "dispatch.idle": "idle",
+      "dispatch.newSession": "New session",
+      "dispatch.notes": "Notes (optional)",
+      "dispatch.openSession": "Open session",
+      "dispatch.platform": "Target platform (optional)",
+      "dispatch.profile": "Target persona (optional)",
+      "dispatch.running": "running",
+      "dispatch.sending": "Dispatching…",
+      "dispatch.sessionsUnavailable": "Existing sessions cannot be listed right now, so only a new session can be used.",
+      "dispatch.submit": "Dispatch",
+      "dispatch.target": "Deliver to",
       "error.hostNotMounted": "Host service is not mounted: reload or restart DSH, then retry.",
       "library.download": "Download",
+      "library.emptyFiles": "No artifacts under this topic yet: dispatch a task from Topics, or have a session write results into outputs/<topic>/.",
+      "library.emptyHint": "The library lists artifacts under outputs/<topic>/; dispatch a topic to a session and they will show up here.",
+      "library.pickProject": "Pick a topic on the left to see its files.",
       "nav.accounts": "Accounts",
       "nav.analytics": "Analytics",
       "nav.calendar": "Calendar",
@@ -168,10 +222,19 @@ window.__ModuleLoader__.load({
       "panel.regions": "Workbench sections",
       "panel.subtitle": "Accounts, personas, content and publishing in one panel",
       "panel.title": "Creator Workbench",
+      "profiles.cancel": "Cancel",
+      "profiles.create": "New persona",
+      "profiles.createPlaceholder": "Persona name, e.g. my-brand",
+      "profiles.edit": "Edit",
+      "profiles.emptyHint": "Personas live under profiles/<name>/ in the data root; enter a name above and create one to copy the six dimensions from _template.",
+      "profiles.pickProfile": "Pick a persona on the left to view and edit its dimensions.",
+      "profiles.save": "Save",
+      "profiles.saved": "Saved {dimension} ({bytes} bytes).",
       "publish.failure": "Failed",
       "publish.history": "Publish history",
       "publish.platforms": "Publish platforms",
       "publish.success": "Success",
+      "schedule.emptyHint": "The calendar reads DSH schedules and workbench entries; dispatch a task or add a schedule and it will appear here.",
       "schedule.openSession": "Open session",
       "selfcheck.blockedWrites": "Rejected out-of-scope writes: {count}",
       "selfcheck.ffmpeg": "ffmpeg",
@@ -186,7 +249,10 @@ window.__ModuleLoader__.load({
       "selfcheck.title": "Environment check",
       "selfcheck.upstreamReadOnly": "Upstream read-only",
       "topics.add": "Add topic",
+      "topics.dispatch": "Dispatch",
+      "topics.emptyHint": "A topic is the starting point: type one above, then use “Dispatch” to turn it into a task in a session.",
       "topics.title": "Topic title",
+      "trends.emptyHint": "Trends come from upstream skills fetching the web: they stay empty when sources are unreachable or unconfigured — try Retry.",
       "trends.fetchedAt": "Fetched at",
       "value.audio": "Audio",
       "value.authorized": "Authorized",
@@ -285,6 +351,14 @@ window.__ModuleLoader__.load({
       ".easel-boundary-detail{margin:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}",
       ".easel-error-text{margin:0;color:var(--dsw-alias-state-error-primary)}",
       ".easel-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px}",
+      ".easel-empty{display:flex;flex-direction:column;gap:4px}",
+      ".easel-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}",
+      ".easel-row-block{flex-wrap:wrap;align-items:flex-start}",
+      ".easel-form-column{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:0}",
+      ".easel-field{display:flex;flex-direction:column;gap:4px}",
+      ".easel-field-label{font-size:12px;color:var(--dsw-alias-label-secondary)}",
+      ".easel-dispatch{display:flex;flex-direction:column;gap:8px;width:100%;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:10px;background:var(--dsw-alias-bg-base)}",
+      ".easel-textarea{font:inherit;min-height:140px;resize:vertical;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);padding:8px 10px}",
     ].join("");
 
     // ------------------------------------------------------------------ 工具
@@ -469,8 +543,18 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 空态：默认只说「没有数据」，但一张空白页对用户是死路——所以每个区域都可以用
+     * `hintKey` 补一句「怎么才会有数据」（design D17）。
+     */
     function EmptyState(props) {
-      return h("p", { className: "easel-muted", "data-easel-state": "empty" }, props.t("common.empty"));
+      var messageKey = typeof props.messageKey === "string" ? props.messageKey : "common.empty";
+      return h(
+        "div",
+        { className: "easel-empty", "data-easel-state": "empty" },
+        h("p", { className: "easel-muted" }, props.t(messageKey)),
+        typeof props.hintKey === "string" ? h("p", { className: "easel-hint", "data-easel-hint": "" }, props.t(props.hintKey)) : null,
+      );
     }
 
     function Section(props) {
@@ -596,7 +680,7 @@ window.__ModuleLoader__.load({
               ],
             }),
           ),
-          h(Section, { title: t("nav.accounts") }, accounts.length === 0 ? h(EmptyState, { t: t }) : h(AccountsRows, { t: t, accounts: accounts })),
+          h(Section, { title: t("nav.accounts") }, accounts.length === 0 ? h(EmptyState, { t: t, hintKey: "accounts.emptyHint" }) : h(AccountsRows, { t: t, accounts: accounts })),
         );
       });
     }
@@ -622,7 +706,7 @@ window.__ModuleLoader__.load({
 
       return h(Resource, { state: state, t: t }, function (data) {
         var accounts = Array.isArray(data.accounts) ? data.accounts : [];
-        if (accounts.length === 0) return h(EmptyState, { t: t });
+        if (accounts.length === 0) return h(EmptyState, { t: t, hintKey: "accounts.emptyHint" });
         return h(
           "ul",
           { className: "easel-list" },
@@ -660,18 +744,119 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /**
+     * 画像详情：六个维度各是一份 Markdown。读是默认态，点「编辑」进入文本框，
+     * 保存走 `PUT /profiles/:name/dimensions/:dimension`（`{text}`）——宿主会
+     * `resolveInside` 校验并原子落盘，插件不在客户端拼路径。
+     */
     function ProfileDetail(props) {
       var t = props.t;
       var state = useEndpoint(props.api, "/profiles/" + encodeURIComponent(props.name));
+      var editingTuple = React.useState(null);
+      var editing = editingTuple[0];
+      var setEditing = editingTuple[1];
+      var draftTuple = React.useState("");
+      var draft = draftTuple[0];
+      var setDraft = draftTuple[1];
+      var statusTuple = React.useState({ status: "idle", message: "" });
+      var status = statusTuple[0];
+      var setStatus = statusTuple[1];
+
+      function save(dimension) {
+        setStatus({ status: "running", message: "" });
+        props
+          .api("/profiles/" + encodeURIComponent(props.name) + "/dimensions/" + encodeURIComponent(dimension), {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ text: draft }),
+          })
+          .then(function (payload) {
+            var bytes = payload !== null && payload !== undefined && payload.bytes !== undefined ? String(payload.bytes) : "";
+            setStatus({ status: "saved", message: t("profiles.saved", { dimension: dimension, bytes: bytes }) });
+            setEditing(null);
+            state.reload();
+          })
+          .catch(function (error) {
+            setStatus({ status: "failed", message: error instanceof Error ? error.message : String(error) });
+          });
+      }
+
       return h(Resource, { state: state, t: t }, function (data) {
         var dimensions = data.dimensions !== null && typeof data.dimensions === "object" ? data.dimensions : {};
         var keys = Object.keys(dimensions);
-        if (keys.length === 0) return h(EmptyState, { t: t });
+        if (keys.length === 0) return h(EmptyState, { t: t, hintKey: "profiles.emptyHint" });
         return h(
           "div",
           { className: "easel-region" },
+          status.status === "failed" ? h("p", { className: "easel-error-text", "data-easel-profile-error": "" }, status.message) : null,
+          status.status === "saved" ? h("p", { className: "easel-hint", "data-easel-profile-saved": "" }, status.message) : null,
           keys.map(function (dimension) {
-            return h(Section, { key: dimension, title: dimension }, h("pre", { className: "easel-text" }, String(dimensions[dimension])));
+            var open = editing === dimension;
+            return h(
+              Section,
+              { key: dimension, title: dimension },
+              open
+                ? h(
+                    "div",
+                    { className: "easel-form easel-form-column" },
+                    h("textarea", {
+                      className: "easel-textarea",
+                      "data-easel-profile-editor": dimension,
+                      value: draft,
+                      onChange: function (event) {
+                        setDraft(event.target.value);
+                      },
+                    }),
+                    h(
+                      "div",
+                      { className: "easel-actions" },
+                      h(
+                        "button",
+                        {
+                          type: "button",
+                          className: "easel-button",
+                          "data-easel-profile-save": dimension,
+                          disabled: status.status === "running",
+                          onClick: function () {
+                            save(dimension);
+                          },
+                        },
+                        t("profiles.save"),
+                      ),
+                      h(
+                        "button",
+                        {
+                          type: "button",
+                          className: "easel-button",
+                          "data-easel-profile-cancel": dimension,
+                          onClick: function () {
+                            setEditing(null);
+                          },
+                        },
+                        t("profiles.cancel"),
+                      ),
+                    ),
+                  )
+                : h(
+                    "div",
+                    null,
+                    h("pre", { className: "easel-text" }, String(dimensions[dimension])),
+                    h(
+                      "button",
+                      {
+                        type: "button",
+                        className: "easel-button",
+                        "data-easel-profile-edit": dimension,
+                        onClick: function () {
+                          setDraft(String(dimensions[dimension]));
+                          setStatus({ status: "idle", message: "" });
+                          setEditing(dimension);
+                        },
+                      },
+                      t("profiles.edit"),
+                    ),
+                  ),
+            );
           }),
         );
       });
@@ -682,41 +867,87 @@ window.__ModuleLoader__.load({
       var tuple = React.useState(null);
       var selected = tuple[0];
       var setSelected = tuple[1];
+      var draftTuple = React.useState("");
+      var draft = draftTuple[0];
+      var setDraft = draftTuple[1];
+      var statusTuple = React.useState({ status: "idle", message: "" });
+      var status = statusTuple[0];
+      var setStatus = statusTuple[1];
       var state = useEndpoint(props.api, "/profiles");
-      return h(Resource, { state: state, t: t }, function (data) {
-        var profiles = Array.isArray(data.profiles) ? data.profiles : [];
-        var dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
-        if (profiles.length === 0) return h(EmptyState, { t: t });
-        return h(
-          "div",
-          { className: "easel-split" },
-          h(
-            "ul",
-            { className: "easel-list easel-list-side" },
-            profiles.map(function (profile) {
-              var present = Array.isArray(profile.dimensions) ? profile.dimensions.length : 0;
-              return h(
-                "li",
-                { key: String(profile.name) },
-                h(
-                  "button",
-                  {
-                    type: "button",
-                    className: "easel-nav-item" + (selected === profile.name ? " easel-nav-item-active" : ""),
-                    "data-easel-profile": String(profile.name),
-                    onClick: function () {
-                      setSelected(profile.name);
+
+      // 新建画像 = 从 `profiles/_template` 复制六个维度文档（宿主 createProfile）。
+      function create(event) {
+        event.preventDefault();
+        var name = draft.trim();
+        if (name === "") return;
+        setStatus({ status: "running", message: "" });
+        props
+          .api("/profiles", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name }) })
+          .then(function (payload) {
+            var created = payload !== null && payload !== undefined && typeof payload.name === "string" ? payload.name : name;
+            setDraft("");
+            setStatus({ status: "idle", message: "" });
+            setSelected(created);
+            state.reload();
+          })
+          .catch(function (error) {
+            setStatus({ status: "failed", message: error instanceof Error ? error.message : String(error) });
+          });
+      }
+
+      return h(
+        "div",
+        null,
+        h(
+          "form",
+          { className: "easel-form", onSubmit: create },
+          h("input", {
+            className: "easel-input",
+            "data-easel-profile-input": "",
+            value: draft,
+            placeholder: t("profiles.createPlaceholder"),
+            onChange: function (event) {
+              setDraft(event.target.value);
+            },
+          }),
+          h("button", { type: "submit", className: "easel-button", "data-easel-profile-create": "", disabled: status.status === "running" }, t("profiles.create")),
+        ),
+        status.status === "failed" ? h("p", { className: "easel-error-text", "data-easel-profile-error": "" }, status.message) : null,
+        h(Resource, { state: state, t: t }, function (data) {
+          var profiles = Array.isArray(data.profiles) ? data.profiles : [];
+          var dimensions = Array.isArray(data.dimensions) ? data.dimensions : [];
+          if (profiles.length === 0) return h(EmptyState, { t: t, hintKey: "profiles.emptyHint" });
+          return h(
+            "div",
+            { className: "easel-split" },
+            h(
+              "ul",
+              { className: "easel-list easel-list-side" },
+              profiles.map(function (profile) {
+                var present = Array.isArray(profile.dimensions) ? profile.dimensions.length : 0;
+                return h(
+                  "li",
+                  { key: String(profile.name) },
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      className: "easel-nav-item" + (selected === profile.name ? " easel-nav-item-active" : ""),
+                      "data-easel-profile": String(profile.name),
+                      onClick: function () {
+                        setSelected(profile.name);
+                      },
                     },
-                  },
-                  h("span", { className: "easel-row-title" }, String(profile.name)),
-                  h("span", { className: "easel-muted" }, String(present) + " / " + String(dimensions.length)),
-                ),
-              );
-            }),
-          ),
-          selected === null ? h(EmptyState, { t: t }) : h(ProfileDetail, { t: t, api: props.api, name: selected }),
-        );
-      });
+                    h("span", { className: "easel-row-title" }, String(profile.name)),
+                    h("span", { className: "easel-muted" }, String(present) + " / " + String(dimensions.length)),
+                  ),
+                );
+              }),
+            ),
+            selected === null ? h(EmptyState, { t: t, hintKey: "profiles.pickProfile" }) : h(ProfileDetail, { t: t, api: props.api, name: selected }),
+          );
+        }),
+      );
     }
 
     function ProjectDetail(props) {
@@ -724,7 +955,7 @@ window.__ModuleLoader__.load({
       var state = useEndpoint(props.api, "/projects/" + encodeURIComponent(props.topic));
       return h(Resource, { state: state, t: t }, function (data) {
         var files = Array.isArray(data.files) ? data.files : [];
-        if (files.length === 0) return h(EmptyState, { t: t });
+        if (files.length === 0) return h(EmptyState, { t: t, hintKey: "library.emptyFiles" });
         return h(
           "ul",
           { className: "easel-list" },
@@ -755,7 +986,7 @@ window.__ModuleLoader__.load({
       var state = useEndpoint(props.api, "/projects");
       return h(Resource, { state: state, t: t }, function (data) {
         var projects = Array.isArray(data.projects) ? data.projects : [];
-        if (projects.length === 0) return h(EmptyState, { t: t });
+        if (projects.length === 0) return h(EmptyState, { t: t, hintKey: "library.emptyHint" });
         return h(
           "div",
           { className: "easel-split" },
@@ -782,7 +1013,7 @@ window.__ModuleLoader__.load({
               );
             }),
           ),
-          selected === null ? h(EmptyState, { t: t }) : h(ProjectDetail, { t: t, api: props.api, topic: selected }),
+          selected === null ? h(EmptyState, { t: t, hintKey: "library.pickProject" }) : h(ProjectDetail, { t: t, api: props.api, topic: selected }),
         );
       });
     }
@@ -815,7 +1046,7 @@ window.__ModuleLoader__.load({
             var rows = (Array.isArray(data.platforms) ? data.platforms : []).map(function (platform) {
               return [String(platform.label || platform.id), describeAccepts(platform.accepts, t)];
             });
-            return rows.length === 0 ? h(EmptyState, { t: t }) : h(KeyValue, { t: t, rows: rows });
+            return rows.length === 0 ? h(EmptyState, { t: t, hintKey: "analytics.emptyHint" }) : h(KeyValue, { t: t, rows: rows });
           }),
         ),
         h(
@@ -823,7 +1054,7 @@ window.__ModuleLoader__.load({
           { title: t("publish.history") },
           h(Resource, { state: history, t: t }, function (data) {
             var records = Array.isArray(data.records) ? data.records : [];
-            if (records.length === 0) return h(EmptyState, { t: t });
+            if (records.length === 0) return h(EmptyState, { t: t, hintKey: "analytics.emptyHint" });
             return h(
               "ul",
               { className: "easel-list" },
@@ -851,7 +1082,7 @@ window.__ModuleLoader__.load({
       var state = useEndpoint(props.api, "/schedule");
       return h(Resource, { state: state, t: t }, function (data) {
         var items = Array.isArray(data.items) ? data.items : [];
-        if (items.length === 0) return h(EmptyState, { t: t });
+        if (items.length === 0) return h(EmptyState, { t: t, hintKey: "schedule.emptyHint" });
         return h(
           "ul",
           { className: "easel-list" },
@@ -887,6 +1118,167 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /**
+     * 派发到会话：选题只是待办，真正产出内容的一步是「把它变成某个会话里的任务说明」。
+     * 宿主 `POST /dispatch` 早就有（`lib/host/dispatch.js`），缺的一直是入口——所以这里
+     * 把只能由人决定的两件事收齐：**期望产物**（任务说明的必填项）与**投递目标**
+     * （新会话，或从 `/sessions` 里挑一个既有会话）。
+     *
+     * `target` 的取值与宿主一致：`new-session` / `current-session`（后者必须带 `sessionId`）。
+     */
+    function DispatchForm(props) {
+      var t = props.t;
+      var topic = props.topic;
+      var fieldsTuple = React.useState({ deliverable: "", profile: "", platform: "", notes: "" });
+      var fields = fieldsTuple[0];
+      var setFields = fieldsTuple[1];
+      var targetTuple = React.useState("new-session");
+      var target = targetTuple[0];
+      var setTarget = targetTuple[1];
+      var statusTuple = React.useState({ status: "idle", message: "", sessionId: null });
+      var status = statusTuple[0];
+      var setStatus = statusTuple[1];
+      var sessions = useEndpoint(props.api, "/sessions");
+
+      function change(name) {
+        return function (event) {
+          var value = event.target.value;
+          setFields(function (previous) {
+            var next = {};
+            Object.keys(previous).forEach(function (key) {
+              next[key] = previous[key];
+            });
+            next[name] = value;
+            return next;
+          });
+        };
+      }
+
+      function submit(event) {
+        event.preventDefault();
+        var deliverable = String(fields.deliverable).trim();
+        if (deliverable === "") {
+          setStatus({ status: "failed", message: t("dispatch.deliverableRequired"), sessionId: null });
+          return;
+        }
+        var body = {
+          target: target === "new-session" ? "new-session" : "current-session",
+          task: {
+            goal: String(topic.title),
+            deliverable: deliverable,
+            profile: String(fields.profile).trim(),
+            platform: String(fields.platform).trim(),
+            notes: String(fields.notes).trim(),
+          },
+        };
+        if (target !== "new-session") body.sessionId = target;
+        setStatus({ status: "running", message: "", sessionId: null });
+        props
+          .api("/dispatch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (payload) {
+            var sessionId = payload !== null && payload !== undefined && typeof payload.sessionId === "string" ? payload.sessionId : "";
+            setStatus({ status: "done", message: "", sessionId: sessionId });
+          })
+          .catch(function (error) {
+            setStatus({ status: "failed", message: error instanceof Error ? error.message : String(error), sessionId: null });
+          });
+      }
+
+      var options = [{ id: "new-session", label: t("dispatch.newSession") }];
+      if (sessions.status === "ready" && sessions.data !== null && Array.isArray(sessions.data.sessions)) {
+        sessions.data.sessions.forEach(function (session) {
+          if (session === null || session === undefined || typeof session.id !== "string") return;
+          options.push({ id: session.id, label: (session.title === undefined || session.title === null ? session.id : String(session.title)) + "（" + t(session.running === true ? "dispatch.running" : "dispatch.idle") + "）" });
+        });
+      }
+
+      return h(
+        "form",
+        { className: "easel-dispatch", "data-easel-dispatch-form": String(topic.id), onSubmit: submit },
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("dispatch.deliverable")),
+          h("input", {
+            className: "easel-input",
+            "data-easel-dispatch-deliverable": "",
+            value: fields.deliverable,
+            placeholder: t("dispatch.deliverablePlaceholder"),
+            onChange: change("deliverable"),
+          }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("dispatch.profile")),
+          h("input", { className: "easel-input", "data-easel-dispatch-profile": "", value: fields.profile, onChange: change("profile") }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("dispatch.platform")),
+          h("input", { className: "easel-input", "data-easel-dispatch-platform": "", value: fields.platform, onChange: change("platform") }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("dispatch.notes")),
+          h("input", { className: "easel-input", "data-easel-dispatch-notes": "", value: fields.notes, onChange: change("notes") }),
+        ),
+        h(
+          "label",
+          { className: "easel-field" },
+          h("span", { className: "easel-field-label" }, t("dispatch.target")),
+          h(
+            "select",
+            {
+              className: "easel-input",
+              "data-easel-dispatch-target": "",
+              value: target,
+              onChange: function (event) {
+                setTarget(event.target.value);
+              },
+            },
+            options.map(function (option) {
+              return h("option", { key: option.id, value: option.id }, option.label);
+            }),
+          ),
+        ),
+        sessions.status === "error" ? h("p", { className: "easel-hint", "data-easel-dispatch-sessions": "" }, t("dispatch.sessionsUnavailable")) : null,
+        h(
+          "div",
+          { className: "easel-actions" },
+          h(
+            "button",
+            { type: "submit", className: "easel-button", "data-easel-dispatch-submit": "", disabled: status.status === "running" },
+            status.status === "running" ? t("dispatch.sending") : t("dispatch.submit"),
+          ),
+        ),
+        status.status === "failed" ? h("p", { className: "easel-error-text", "data-easel-dispatch-error": "" }, status.message) : null,
+        status.status === "done"
+          ? h(
+              "p",
+              { className: "easel-hint", "data-easel-dispatch-done": "" },
+              t("dispatch.done", { session: String(status.sessionId) }),
+              status.sessionId === "" || typeof props.openSession !== "function"
+                ? null
+                : h(
+                    "button",
+                    {
+                      type: "button",
+                      className: "easel-button",
+                      "data-easel-dispatch-open": status.sessionId,
+                      onClick: function () {
+                        props.openSession(status.sessionId);
+                      },
+                    },
+                    t("dispatch.openSession"),
+                  ),
+            )
+          : null,
+      );
+    }
+
     function TopicsRegion(props) {
       var t = props.t;
       var draftTuple = React.useState("");
@@ -895,6 +1287,9 @@ window.__ModuleLoader__.load({
       var submitTuple = React.useState({ status: "idle", message: "" });
       var submit = submitTuple[0];
       var setSubmit = submitTuple[1];
+      var openTuple = React.useState(null);
+      var open = openTuple[0];
+      var setOpen = openTuple[1];
       var state = useEndpoint(props.api, "/topics");
 
       function create(event) {
@@ -934,20 +1329,34 @@ window.__ModuleLoader__.load({
         submit.status === "failed" ? h("p", { className: "easel-error-text", "data-easel-topic-error": "" }, submit.message) : null,
         h(Resource, { state: state, t: t }, function (data) {
           var topics = Array.isArray(data.topics) ? data.topics : [];
-          if (topics.length === 0) return h(EmptyState, { t: t });
+          if (topics.length === 0) return h(EmptyState, { t: t, hintKey: "topics.emptyHint" });
           return h(
             "ul",
             { className: "easel-list" },
             topics.map(function (topic) {
+              var expanded = open === topic.id;
               return h(
                 "li",
-                { className: "easel-row", key: String(topic.id) },
+                { className: "easel-row easel-row-block", key: String(topic.id) },
                 h(
                   "div",
                   { className: "easel-row-main" },
                   h("span", { className: "easel-row-title" }, String(topic.title)),
                   h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, topic.status), topic.source, topic.note])),
                 ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: "easel-button",
+                    "data-easel-dispatch-toggle": String(topic.id),
+                    onClick: function () {
+                      setOpen(expanded ? null : topic.id);
+                    },
+                  },
+                  expanded ? t("dispatch.close") : t("topics.dispatch"),
+                ),
+                expanded ? h(DispatchForm, { t: t, api: props.api, topic: topic, openSession: props.openSession }) : null,
               );
             }),
           );
@@ -980,7 +1389,7 @@ window.__ModuleLoader__.load({
                 }),
               ),
           items.length === 0
-            ? h(EmptyState, { t: t })
+            ? h(EmptyState, { t: t, hintKey: "trends.emptyHint" })
             : h(
                 "ul",
                 { className: "easel-list" },

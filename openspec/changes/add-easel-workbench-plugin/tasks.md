@@ -95,12 +95,22 @@
 - [x] 11.2 环境自检摘要点名缺失与降级项：`ready:false` 时显示「缺失：X、Y；降级：Z」，全部就绪时显示「全部就绪」。验证方式：`node --test test/client.test.mjs` 的「环境自检的摘要行点名缺失与降级项，状态标签本地化」用例（同时断言三种状态标签文案）
 - [x] 11.3 自检两条文案去重与易读性：上游只读态改为「`skills` 始终只读；本次运行没有发生越界写入。」（原「已拒绝对 skills 的写入」连读易被误读），技能目录长度改为「技能目录中每条描述最多 N 个字符，超出部分会被截断。」（原句重复了 500 两次）。验证方式：`node --test test/selfcheck.test.mjs` 通过
 
+## 12. 界面可用性（实际使用反馈第二批）
+
+用户在真机上反馈：账号「验证」报「DSH 子进程服务不可用」，日历、热点、选题、内容库全空白，且不知道「怎么绑定会话去生成内容」「画像怎么维护」（详见 `design.md` 的 D17/D19）：
+
+- [x] 12.1 空态必须给出下一步：`EmptyState` 增加 `hintKey`，日历、热点、选题、内容库（含未选主题与主题下无文件）、画像（含未选画像）、账号、数据七处的空态改为「数据从哪来 + 做什么才会有」，不再只写「暂无内容」。验证方式：`node --test test/client.test.mjs` 的「空白区域给出『怎么才会有数据』的下一步」用例（逐个区域断言空态里带 `data-easel-hint` 且文案说到来源）
+- [x] 12.2 选题派发成会话里的任务：选题行加「派发」，表单收期望产物（必填）、目标画像、目标平台、补充说明与投递目标（新会话 / 既有会话），`POST /dispatch`；缺期望产物时本地拦下不发请求；成功后显示会话标识与走 `uiWorkspace.openSession` 的「打开会话」。验证方式：`node --test test/client.test.mjs` 的「选题能派发到会话」用例（断言请求体 `target`/`task.goal`/`task.deliverable`、既有会话可选、「打开会话」落到 `sessionOpens`）
+- [x] 12.3 画像可新建并逐维度维护：画像区域加「新建画像」（`POST /profiles`），维度改为可编辑（`PUT /profiles/:name/dimensions/:dimension`），成功后就地显示「已保存 <维度>（<字节数> 字节）」。验证方式：`node --test test/client.test.mjs` 的「画像可以新建，也能逐维度编辑并写回宿主」用例
+- [x] 12.4 账号验证的子进程延迟解析（真实缺陷）：`lib/index.js` 过去在 `apply()` 里给 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册晚于插件挂载，于是账号验证永久报 `runtime-missing`，自检却因为请求时解析而说能力正常。改为 `lazyService(ctx, "subprocess")`（`lib/host/services.js`）＋ `runCommand` 内解析（`lib/host/exec.js`），并让 `resolvePython` 与自检共用同一条候选链。验证方式：`node --test test/index.test.mjs` 的「宿主子进程服务晚于插件挂载就绪时，账号验证仍能执行（延迟解析）」用例（挂载后再注入服务，验证请求仍能起子进程）
+- [x] 12.5 按用户要求装好 ffmpeg：从 npm 取 `@ffmpeg-installer/linux-x64`（4.1.0）静态构建，落到 `/data/dsh/home/.local/bin/ffmpeg`（0755，探测链已覆盖该目录）。验证方式：`ffmpeg -version` 输出 `ffmpeg version N-47683-g0e8eb07980-static`（含 libx264/libx265/aac）；活实例 `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`（ffmpeg 解析到 `/data/dsh/home/.local/bin/ffmpeg`）
+
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **294 项全绿**（`fail 0`；
-  早期记录为 277 项，§10/§11 的用例陆续补入后为 294）；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **298 项全绿**（`fail 0`；
+  早期记录为 277 项，§10–§12 的用例陆续补入后为 298）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -165,10 +175,28 @@
   受支持方式、源码树 `link:` 只作开发态（D12）；安装后必须重载进程、以宿主接口 200 为验收判据（D13）；
   客户端对空体 404 给可操作诊断（D14）。新增能力 delta `specs/workbench-bundle-packaging/spec.md` 与
   `specs/creator-workbench-ui/spec.md` 的「宿主服务缺失时的可操作诊断」requirement；对应任务见 §10。
+- **界面可用性（2026-10-09，第 15 项实现期改进，对应用户「验证账号提示进程不可用 / 帮我装 ffmpeg / 怎么绑定
+  会话生成内容、画像怎么维护、日历热点选题为什么空白」的反馈与 design D17–D19）**：① 真实缺陷——`lib/index.js`
+  在 `apply()` 里对 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册晚于插件挂载，于是账号验证永久
+  返回 `runtime-missing`「DSH 子进程服务不可用」，同一实例的 `/selfcheck` 却说能力 ok（自检是请求时解析）；
+  改为 `lazyService(ctx, "subprocess")` + `runCommand` 内解析，并让 `resolvePython` 与自检共用一条候选链；
+  ② 客户端补「派发到会话」入口（选题行 → 表单 → `POST /dispatch` → 「打开会话」走 `uiWorkspace.openSession`）、
+  画像新建与逐维度编辑（`POST /profiles`、`PUT /profiles/:name/dimensions/:dimension`）、七处空态改为
+  「数据从哪来 + 做什么才会有」；③ 测试基础设施缺陷——`react-dom` 在 require 时烘死 `canUseDOM`，而
+  `test/client.test.mjs` 先 require React 后装 jsdom，导致受控输入永不触发 `onChange`（四个用例假失败）；
+  改为先 `installGlobals(createDom())` 再 require React，写输入框用原型 `value` setter + `input` 事件；
+  ④ 新增一个环境相关断言的自纠——`test/index.test.mjs` 里 `spawned.every(argv => argv[0] === process.execPath)`
+  在本机装好 ffmpeg 后失败（探测链会顺带跑 `ffmpeg -version`），改为只对账号验证那条断言 `argv[0]`。
+  实测：`node --test test/*.test.mjs` → **298 项全绿**；`node --test test/client.test.mjs` → 15/15；
+  `node scripts/build-client.mjs` → `lib/client.js` 79183 字节；`ffmpeg -version` 输出静态构建
+  `N-47683-g0e8eb07980-static`（已放到 `/data/dsh/home/.local/bin/ffmpeg`），活实例
+  `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`。
 
 ## 待用户验收（本机无法完成的部分）
 
-本会话批准策略为 `never`（无法真实 `plugin_manager install_bundle`、无法联网截图），且本机没有 `ffmpeg`：
+本会话批准策略为 `never`（无法真实 `plugin_manager install_bundle`、无法联网截图）。`ffmpeg` 已于
+2026-10-09 装到 `/data/dsh/home/.local/bin/ffmpeg`（见 §12 的 12.5），因此下面凡提到「本机没有 ffmpeg」
+的条目均以该安装为前提复看：
 
 - **1.1**：引导脚本已实跑通过 `core` 组（11 个直接依赖逐个 import 成功）；规格串离线校验（用 venv 内自带的
   `pip._vendor.packaging.requirements.Requirement` 逐 token 解析，不联网、不安装）：除 `easel` 组的
@@ -189,7 +217,13 @@
 - **2.4**：中文界面、英文界面、折叠态三张截图。
 - **11.1–11.3（需重启后目视确认）**：界面文案本地化与自检摘要的改动已由 `test/client.test.mjs` 与
   `test/selfcheck.test.mjs` 覆盖，但**只有在重启 DSH 以加载新宿主/客户端代码后**才能在浏览器里看到：
-  状态标签应显示「正常／缺失／降级／已授权／未授权」等中文，自检摘要应显示「缺失：ffmpeg」而不是只写「缺失」。
+  状态标签应显示「正常／缺失／降级／已授权／未授权」等中文；ffmpeg 装好之后自检摘要应显示「全部就绪」，
+  而不再是「缺失：ffmpeg」。
+- **12.1–12.3（需重启后走查）**：空态指引、「选题 → 派发到会话」、「新建画像 / 逐维度编辑」三件客户端改动
+  已由 `test/client.test.mjs` 的 15 项覆盖，但真机走查才能确认：日历/热点/选题/内容库的空态说明了数据来源；
+  在选题行点「派发」、填期望产物并投递到新会话后，能在工作台看到该会话并点「打开会话」跳过去；
+  画像页能新建画像、编辑某个维度并看到「已保存 …」。**12.4 的子进程修复同样要重启宿主才生效**——
+  重启前点账号「验证」仍会报「DSH 子进程服务不可用」。
 - **7.2**：在 DSH 排期界面暂停/删除工作台条目后，工作台视图同步显示为已暂停/已消失。
 - **8.1 / 8.3**：删除 `_repo/easel/`、`_repo/openclaw/`、`setup.sh`、`setup.ps1` 与 `web/app.py` 的三组
   路由，以及替换 20 个 OpenClaw 集成测试——8.1 的前置条件是「新路径全部验收通过」，即上面这些真机验收；

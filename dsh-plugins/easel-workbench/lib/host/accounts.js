@@ -239,7 +239,7 @@ export function stateToAccountState(state) {
 /**
  * 建立账号服务。
  *
- * @param {{ runtime: Record<string, any>, subprocess?: object, paths: object,
+ * @param {{ runtime: Record<string, any>, subprocess?: object | (() => object | undefined), paths: object,
  *   resolvePython: () => Promise<string> }} deps
  */
 export function createAccountsService(deps) {

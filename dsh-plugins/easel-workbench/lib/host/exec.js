@@ -27,7 +27,8 @@ export function readCollected(reader) {
 /**
  * 执行一条命令并等待其结束。
  *
- * @param {object} subprocess `ctx.subprocess` 服务（或测试替身）。
+ * @param {object | (() => object | undefined)} subprocess `ctx.subprocess` 服务、测试替身，
+ *   或延迟解析器（宿主服务装配晚于插件挂载时用解析器）。
  * @param {{
  *   argv: readonly string[],
  *   cwd: string,
@@ -52,7 +53,12 @@ export async function runCommand(subprocess, spec) {
     signal,
   } = spec;
 
-  if (subprocess === undefined || subprocess === null) {
+  // 允许传入「解析器」而不是服务对象：宿主服务是异步装配的，插件挂载时
+  // `ctx.subprocess` 可能还不存在，因此到真正要执行命令的那一刻才解析
+  // （`lib/index.js` 传的就是 `lazyService(ctx, "subprocess")`）。
+  const service = typeof subprocess === "function" ? subprocess() : subprocess;
+
+  if (service === undefined || service === null) {
     throw new EaselError(ERROR_CODES.RUNTIME_MISSING, "DSH 子进程服务不可用，无法执行外部命令。", {
       details: { argv: [...argv] },
     });
@@ -70,7 +76,7 @@ export async function runCommand(subprocess, spec) {
   try {
     let handle;
     try {
-      handle = subprocess.spawn({
+      handle = service.spawn({
         argv: [...argv],
         cwd,
         stdio: { stdin: "ignore", stdout: { maxBytes }, stderr: { maxBytes } },

@@ -126,3 +126,50 @@
 
 - **WHEN** 自检结果中所有条目均为 `ok`
 - **THEN** 摘要行显示「全部就绪」一类的明确结论
+
+### Requirement: 空态必须给出下一步
+
+任一功能区域在无数据时 SHALL 说明「数据从哪来、做什么才会有」，MUST NOT 只显示「暂无内容」一类的死路提示。空态文案 SHALL 来自字典，可随语言切换。
+
+#### Scenario: 日历为空
+
+- **WHEN** `/schedule` 返回空列表
+- **THEN** 日历空态说明排期来自 DSH 排期与工作台登记，并指出派发任务或登记排期后才会出现条目
+
+#### Scenario: 内容库为空
+
+- **WHEN** `/projects` 返回空列表或某个主题下没有产物
+- **THEN** 内容库空态说明产物位于 `outputs/<主题>/`，并指出把选题派发到会话产出后才会出现在这里
+
+### Requirement: 选题可以派发成会话里的任务
+
+选题区域 SHALL 提供派发入口，收齐「期望产物」（必填）、目标画像、目标平台、补充说明与投递目标（新会话或既有会话），并以 `POST /dispatch` 提交。缺少期望产物时 SHALL 在本地拦下并说明缺什么，MUST NOT 把请求发到宿主。派发成功后 SHALL 说明落到哪个会话，并提供走 `uiWorkspace.openSession` 的「打开会话」入口。
+
+#### Scenario: 缺少期望产物
+
+- **WHEN** 用户没有填写期望产物就提交派发表单
+- **THEN** 面板显示「请先写清期望产物」，且不发出 `POST /dispatch`
+
+#### Scenario: 派发到新会话
+
+- **WHEN** 用户填写期望产物并保持投递目标为「新会话」后提交
+- **THEN** 请求体为 `{target:"new-session", task:{goal:<选题标题>, deliverable, profile, platform, notes}}`，成功后显示会话标识与「打开会话」
+
+#### Scenario: 投递到既有会话
+
+- **WHEN** 用户选择一个既有会话作为投递目标
+- **THEN** 请求体带 `sessionId`，且 `target` 为 `current-session`
+
+### Requirement: 画像可以新建并逐维度维护
+
+画像区域 SHALL 支持新建画像（`POST /profiles`）与逐维度编辑（`PUT /profiles/:name/dimensions/:dimension`）。保存成功后 SHALL 回报写了哪个维度及其字节数；宿主拒绝时 SHALL 呈现可读错误。
+
+#### Scenario: 新建画像
+
+- **WHEN** 用户填写画像名称并提交
+- **THEN** 发出 `POST /profiles`，成功后选中该画像
+
+#### Scenario: 编辑单个维度
+
+- **WHEN** 用户对某个维度点「编辑」、改动内容并保存
+- **THEN** 发出 `PUT /profiles/<名称>/dimensions/<维度>`，请求体为 `{text}`，成功后就地显示「已保存 <维度>（<字节数> 字节）」

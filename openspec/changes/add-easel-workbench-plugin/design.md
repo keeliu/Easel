@@ -137,6 +137,28 @@ pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真�
 
 因此客户端统一走 `valueLabel(t, value)`：先查 `value.<枚举>` 词条，字典缺词条则**原样回落**（宿主新增枚举值时界面宁可显示原词，也不能显示 `value.xxx` 这类内部键名或空白）；而 `easel-state-*` 样式类名继续用宿主原值，使文案与样式解耦。自检摘要行改为**点名**：「缺失：ffmpeg；降级：运行时目录」，全部就绪时明确写「全部就绪」。同理，宿主给的中文诊断句要避免「拒绝/对」这类相邻同音字连读造成的误读。
 
+### D17：缺省即死路——空态与动作入口是同一件事的两面
+
+用户在真机上看到日历、热点、选题、内容库全是空白，随即问「我要怎么去绑定会话、生成内容」「画像怎么维护」。这说明：**空态文案和动作入口缺一不可**。只写「暂无内容」等于把问题推回给用户；只给入口而不说明数据从哪来，用户仍然不知道该点哪里。
+
+因此每个区域的空态都回答两件事：数据从哪来（`outputs/<主题>/`、上游技能的联网抓取、DSH 排期与工作台登记、`profiles/<名称>/`），和做什么才会有（在上面加一条选题、派发一次、登记一条排期）。同时补上把「空白」变成「有数据」的动作：
+
+- 选题行加「派发」：收齐期望产物（必填）、目标画像、目标平台、补充说明与投递目标（新会话或既有会话），提交 `POST /dispatch`；成功后显示会话标识与「打开会话」（走 `uiWorkspace.openSession`），否则派发完用户还得自己去找会话。
+- 画像区域加「新建画像」与逐维度编辑（`POST /profiles`、`PUT /profiles/:name/dimensions/:dimension`），界面上不再只是只读橱窗。
+- 派发表单**先本地校验**期望产物：把 `INVALID_INPUT` 交给宿主，等于让用户为「界面没告诉他这是必填」买单。
+
+### D18：客户端测试必须在 require react-dom 之前架好 DOM
+
+React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若先 require 再装 `document`，React 走「非浏览器」分支，受控输入的 `input` 事件永远进不到 `onChange`——实测直接赋值、`change` 事件、`createEvent` 三种写法状态都不变（还会在 `getTargetInstForInputEventPolyfill` 里抛 `Cannot read properties of null (reading 'tag')`）。
+
+因此 `test/client.test.mjs` 在 require `react` / `react-dom/client` **之前**先 `installGlobals(createDom())` 引导一次，之后每个用例仍各用一份新的 jsdom 文档。写输入框要用**原型** `value` setter 再派发 `input` 事件：React 的 value tracker 会把实例 setter 认成自己的写入，从而判定「值没变」。
+
+### D19：宿主服务必须延迟解析，不能在 apply 时取快照
+
+真机实测：`POST /easel-workbench/api/accounts/xiaohongshu/verify` 一直返回 `runtime-missing`「DSH 子进程服务不可用，无法执行外部命令」，而对同一实例 `GET /selfcheck` 却说 DSH 能力 ok——两处结论相反。根因是 `lib/index.js` 在 `apply()` 里就 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册**晚于**插件挂载，于是拿到 `undefined` 永久传下去；自检是请求时解析，所以看起来一切正常。
+
+结论：服务当**能力**持有——`lazyService(ctx, name)` 返回取值函数，真正要用的时候才解析；并且自检与执行必须共用同一条解释器候选链，否则「自检说正常、一执行说不可用」这种自相矛盾还会再出现。
+
 ### 安装与激活实测记录（2026-10-09）
 
 - **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。

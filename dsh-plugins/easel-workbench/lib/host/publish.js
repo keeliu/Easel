@@ -140,7 +140,7 @@ export function reasonOf(stdout, stderr, lines = 8) {
  *
  * @param {{
  *   runtime: Record<string, any>,
- *   subprocess?: object,
+ *   subprocess?: object | (() => object | undefined),
  *   paths: ReturnType<import('./paths.js').createPathPolicy>,
  *   gate: ReturnType<import('./gate.js').createGateService>,
  *   resolvePython: () => Promise<string | undefined>,

@@ -19,3 +19,21 @@
 export function serviceOf(ctx, name) {
   return ctx?.get?.(name);
 }
+
+/**
+ * 把一个宿主服务包装成**延迟解析**的取用函数。
+ *
+ * 为什么不能像过去那样在 `apply()` 里取一次就存下来：DSH 的服务注册顺序不由插件控制。
+ * 实测本机重启后 `ctx.get("subprocess")` 在插件挂载那一刻返回 `undefined`、而请求到达时
+ * 已可用——于是账号「验证」报「DSH 子进程服务不可用」，同一进程的环境自检却把
+ * `subprocess` 判为可用（自检是调用时才解析的）。服务要当**能力**而不是**快照**持有。
+ *
+ * 消费方（`lib/host/exec.js` 的 `runCommand`）同时接受服务对象与解析器，测试替身仍是普通对象。
+ *
+ * @param {Record<string, any> | undefined} ctx 插件上下文
+ * @param {string} name 服务名
+ * @returns {() => any} 每次调用都重新查询的解析器
+ */
+export function lazyService(ctx, name) {
+  return () => serviceOf(ctx, name);
+}

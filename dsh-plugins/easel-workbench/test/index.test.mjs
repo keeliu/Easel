@@ -310,6 +310,44 @@ test("写路由：新增选题会落盘，非法请求体返回可读错误码",
   assert.equal(bad.body.code, "invalid-input");
 });
 
+test("宿主子进程服务晚于插件挂载就绪时，账号验证仍能执行（延迟解析）", async (t) => {
+  const workspace = await makeWorkspace();
+  t.after(() => rm(workspace.root, { recursive: true, force: true }));
+
+  // 挂载时**故意没有** subprocess：实测真实 DSH 重启后服务注册晚于插件挂载，
+  // 过去在 apply() 里取快照，于是账号「验证」一直报「DSH 子进程服务不可用」。
+  const harness = makeCtx();
+  apply(harness.ctx, { repoRoot: workspace.root, pythonExecutable: process.execPath });
+  const handler = harness.registered.prefixes[0].handler;
+
+  const spawned = [];
+  harness.services.subprocess = {
+    spawn(spec) {
+      spawned.push(spec.argv);
+      const stdout = spec.argv.includes("--version")
+        ? "Python 3.12.15"
+        : JSON.stringify({ loggedIn: false });
+      const reader = (text) => ({
+        readFrom: (offset) => ({ text: text.slice(offset), nextOffset: text.length, lossy: false }),
+      });
+      return {
+        collected: { stdout: reader(stdout), stderr: reader("") },
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+      };
+    },
+  };
+
+  const { status, body } = await call(handler, "POST", "/easel-workbench/api/accounts/xiaohongshu/verify");
+  assert.equal(status, 200, `账号验证应当真的执行，实际 ${status}：${JSON.stringify(body)}`);
+  assert.equal(spawned.length > 0, true, "没有调用子进程服务");
+  // 只盯账号验证这一条：同一次运行里还会探测环境（ffmpeg 是否命中取决于本机装没装），不能一概而论。
+  const verify = spawned.find((argv) => argv.some((arg) => String(arg).endsWith("xhs_publish.py")));
+  assert.ok(verify !== undefined, `账号验证必须真的起子进程，实际：${JSON.stringify(spawned)}`);
+  assert.equal(verify[0], process.execPath, `必须用配置里的解释器，实际：${JSON.stringify(verify)}`);
+  // 自检与执行共用同一条候选链：解释器探测也走同一个服务
+  assert.equal(spawned.some((argv) => argv.includes("--version")), true, `解释器探测没走该服务：${JSON.stringify(spawned)}`);
+});
+
 test("未定位数据根时仍能挂载，只在日志与控制面里如实降级", async (t) => {
   const harness = makeCtx();
   // 显式配置指向一个「像插件包但不是仓库」的目录，且把推断来源也隔离掉：

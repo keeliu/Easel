@@ -91,7 +91,7 @@ export function isBlocked(result) {
 /**
  * 建立门禁服务。
  *
- * @param {{ runtime: Record<string, any>, subprocess?: object, resolvePython: () => Promise<string> }} deps
+ * @param {{ runtime: Record<string, any>, subprocess?: object | (() => object | undefined), resolvePython: () => Promise<string> }} deps
  */
 export function createGateService(deps) {
   const { runtime, subprocess } = deps;

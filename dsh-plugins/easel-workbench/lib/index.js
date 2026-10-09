@@ -23,7 +23,6 @@ import {
   PANEL_ID,
   UPSTREAM_READ_ONLY_PREFIXES,
   resolveRuntimeConfig,
-  venvPython,
 } from "./host/config.js";
 import { createAccountsService } from "./host/accounts.js";
 import { createDataService } from "./host/data.js";
@@ -34,12 +33,12 @@ import { createPersonaService } from "./host/persona.js";
 import { createPublishService } from "./host/publish.js";
 import { createScheduleService } from "./host/schedule.js";
 import { createSelfcheckService } from "./host/selfcheck.js";
-import { serviceOf } from "./host/services.js";
+import { lazyService, serviceOf } from "./host/services.js";
 import { createSessionCatalog } from "./host/sessions.js";
 import { createPublishGuard } from "./host/tools.js";
 import { createTrendsService } from "./host/trends.js";
 import { API_PREFIX, createWebService } from "./host/web.js";
-import { locateExecutable, pathCandidates, PYTHON_NAMES, PYTHON_VERSIONED_NAMES } from "./host/runtime.js";
+import { probeRuntime } from "./host/runtime.js";
 
 /** 宿主插件标识。 */
 export const name = "easel-workbench";
@@ -99,23 +98,24 @@ export function apply(ctx, rawConfig) {
     if (typeof ctx?.logger?.info === "function") ctx.logger.info(`[easel-workbench] ${message}`);
   };
 
-  /** 解析 Python 解释器：显式配置 → 受控 venv → PATH。 */
-  const resolvePython = async () => {
-    const candidates = [];
-    if (typeof runtime.runtimeDir === "string") {
-      candidates.push({ path: venvPython(runtime.runtimeDir), source: "runtime-venv" });
-    }
-    for (const path of pathCandidates([...PYTHON_NAMES, ...PYTHON_VERSIONED_NAMES])) {
-      candidates.push({ path, source: "path" });
-    }
-    const located = await locateExecutable({
-      configured: runtime.pythonExecutable,
-      candidates,
-    });
-    return located.path;
-  };
+  // 延迟解析：宿主服务的注册顺序不由插件控制，挂载时可能还没就绪（见 services.js）。
+  const subprocess = lazyService(ctx, "subprocess");
 
-  const subprocess = serviceOf(ctx, "subprocess");
+  /**
+   * 解析 Python 解释器：显式配置 → 受控 venv → PATH → ~/.local/bin。
+   *
+   * 与「环境自检」共用同一份 `probeRuntime`，两侧因此永远给同一个答案——此前这里
+   * 是另一份候选链（少了用户态目录），会出现「自检说 Python 可用、账号验证说找不到
+   * 解释器」这种自相矛盾。
+   */
+  const resolvePython = async () => {
+    try {
+      const probed = await probeRuntime({ runtime, subprocess });
+      return probed.python?.ok === true ? probed.python.path : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const data = createDataService({ paths, runtime });
   const gate = createGateService({ runtime, subprocess, resolvePython });
   const persona = createPersonaService({ runtime });

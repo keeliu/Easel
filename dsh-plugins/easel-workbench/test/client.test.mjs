@@ -24,9 +24,17 @@ import { API_PREFIX as HOST_API_PREFIX } from "../lib/host/web.js";
 const run = promisify(execFile);
 const require = createRequire(import.meta.url);
 
+const { JSDOM } = require("jsdom");
+
+/**
+ * react-dom 在 require 的那一刻就把 `canUseDOM` 烘死了：没有 document 时它走「非浏览器」分支，
+ * 受控输入的 input 事件永远进不了 onChange（改动输入框的用例会一直拿到空字符串）。
+ * 所以先架一个引导用的 DOM，再 require React。
+ */
+installGlobals(createDom());
+
 const React = require("react");
 const ReactDOMClient = require("react-dom/client");
-const { JSDOM } = require("jsdom");
 
 const act = typeof React.act === "function" ? React.act : require("react-dom/test-utils").act;
 
@@ -604,3 +612,202 @@ test("环境自检的摘要行点名缺失与降级项，状态标签本地化",
   assert.equal(allOk.view.container.querySelector("[data-easel-selfcheck-ready]").textContent, "全部就绪");
   await allOk.view.unmount();
 });
+
+test("选题能派发到会话：期望产物必填、既有会话可选，成功后给「打开会话」入口", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    calls.push({ url: target, options: options ?? null });
+    if (target.includes("/topics")) {
+      return { status: 200, json: async () => ({ ok: true, topics: [{ id: "t1", title: "秋季护肤选题", status: "idea" }] }) };
+    }
+    if (target.includes("/sessions")) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, sessions: [{ id: "session-7", title: "上周的内容会话", running: false }] }),
+      };
+    }
+    if (target.includes("/dispatch")) {
+      return { status: 200, json: async () => ({ ok: true, sessionId: "session-easel-1", created: true }) };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="topics"]'));
+  await flush();
+
+  assert.equal(view.container.querySelector("[data-easel-dispatch-form]"), null, "派发表单默认收起");
+
+  await click(view.container.querySelector('[data-easel-dispatch-toggle="t1"]'));
+  await flush();
+
+  const dispatches = () => calls.filter((call) => call.url.includes("/dispatch"));
+  assert.equal(dispatches().length, 0, "点开表单本身不该发请求");
+
+  const target = view.container.querySelector("[data-easel-dispatch-target]");
+  assert.deepEqual(
+    [...target.options].map((option) => option.value),
+    ["new-session", "session-7"],
+    "投递目标要同时给出新会话与既有会话",
+  );
+  assert.equal(target.value, "new-session", "默认投递到新会话");
+  assert.match(target.options[1].textContent, /已休眠/, "会话状态要本地化");
+
+  await click(view.container.querySelector("[data-easel-dispatch-submit]"));
+  await flush();
+  assert.equal(dispatches().length, 0, "没有期望产物时必须本地拦住，而不是把 INVALID_INPUT 交给宿主");
+  assert.match(
+    view.container.querySelector("[data-easel-dispatch-error]").textContent,
+    /期望产物/,
+    "拦下时要说明缺什么",
+  );
+
+  await setValue(view.container.querySelector("[data-easel-dispatch-deliverable]"), "一篇 800 字小红书图文");
+  await setValue(view.container.querySelector("[data-easel-dispatch-profile]"), "brand");
+  await click(view.container.querySelector("[data-easel-dispatch-submit]"));
+  await flush();
+
+  const posted = dispatches();
+  assert.equal(posted.length, 1, "必须 POST /dispatch");
+  assert.equal(posted[0].options.method, "POST");
+  const body = JSON.parse(posted[0].options.body);
+  assert.equal(body.target, "new-session");
+  assert.equal(body.sessionId, undefined, "投递到新会话时不该带 sessionId");
+  assert.equal(body.task.goal, "秋季护肤选题", "任务说明的 goal 应当就是选题标题");
+  assert.equal(body.task.deliverable, "一篇 800 字小红书图文");
+  assert.equal(body.task.profile, "brand");
+
+  const done = view.container.querySelector("[data-easel-dispatch-done]");
+  assert.ok(done !== null, "派发成功后要说明落到哪个会话");
+  assert.match(done.textContent, /session-easel-1/);
+  await click(done.querySelector("[data-easel-dispatch-open]"));
+  assert.deepEqual(state.sessionOpens, ["session-easel-1"], "「打开会话」要走 uiWorkspace.openSession");
+
+  await view.unmount();
+});
+
+test("空白区域给出「怎么才会有数据」的下一步，而不是只说暂无内容", async () => {
+  const fetchImpl = async (url) => {
+    const target = String(url);
+    if (target.includes("/projects")) return { status: 200, json: async () => ({ ok: true, projects: [] }) };
+    if (target.includes("/profiles")) {
+      return { status: 200, json: async () => ({ ok: true, profiles: [], dimensions: [] }) };
+    }
+    return { status: 200, json: async () => ({ ok: true, items: [], topics: [], sessions: [] }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+
+  const expectations = [
+    ["topics", /选题是派发的起点/],
+    ["calendar", /日历读取 DSH 的排期/],
+    ["trends", /热点来自上游技能的联网抓取/],
+    ["library", /内容库列出 outputs\//],
+    ["profiles", /profiles\/<名称>\//],
+  ];
+
+  for (const [region, hint] of expectations) {
+    await click(view.container.querySelector(`[data-easel-nav="${region}"]`));
+    await flush();
+    const empty = view.container.querySelector('[data-easel-state="empty"]');
+    assert.ok(empty !== null, `${region} 应当是空态`);
+    assert.ok(
+      empty.querySelector("[data-easel-hint]") !== null,
+      `${region} 的空态必须带「下一步」说明`,
+    );
+    assert.match(empty.textContent, hint, `${region} 的说明要说到点子上：${empty.textContent}`);
+  }
+
+  await view.unmount();
+});
+
+test("画像可以新建，也能逐维度编辑并写回宿主", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    const method = options?.method ?? "GET";
+    calls.push({ url: target, method, options: options ?? null });
+    if (target.includes("/profiles/brand") && method === "PUT") {
+      return { status: 200, json: async () => ({ ok: true, name: "brand", dimension: "identity", bytes: 21 }) };
+    }
+    if (target.includes("/profiles/brand")) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, name: "brand", dimensions: { identity: "# identity\n", style: "# style\n" } }),
+      };
+    }
+    if (target.includes("/profiles")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          profiles: [{ name: "brand", dimensions: ["identity", "style"] }],
+          dimensions: ["identity", "style", "audience", "platforms", "preferences", "memory"],
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="profiles"]'));
+  await flush();
+
+  await setValue(view.container.querySelector("[data-easel-profile-input]"), "new-brand");
+  await click(view.container.querySelector("[data-easel-profile-create]"));
+  await flush();
+  const created = calls.find((call) => call.url.includes("/profiles") && call.method === "POST");
+  assert.ok(created !== undefined, "「新建画像」必须 POST /profiles");
+  assert.deepEqual(JSON.parse(created.options.body), { name: "new-brand" });
+
+  await click(view.container.querySelector('[data-easel-profile="brand"]'));
+  await flush();
+  await click(view.container.querySelector('[data-easel-profile-edit="identity"]'));
+  await flush();
+
+  const editor = view.container.querySelector('[data-easel-profile-editor="identity"]');
+  assert.equal(editor.value, "# identity\n", "编辑框要带出当前内容");
+  await setValue(editor, "# identity\n面向通勤族\n");
+  await click(view.container.querySelector('[data-easel-profile-save="identity"]'));
+  await flush();
+
+  const written = calls.find((call) => call.method === "PUT");
+  assert.ok(written !== undefined, "保存必须 PUT 维度");
+  assert.match(written.url, /\/profiles\/brand\/dimensions\/identity$/);
+  assert.deepEqual(JSON.parse(written.options.body), { text: "# identity\n面向通勤族\n" });
+  assert.match(
+    view.container.querySelector("[data-easel-profile-saved]").textContent,
+    /已保存 identity（21 字节）/,
+    "保存后要回报写了哪个维度",
+  );
+
+  await view.unmount();
+});
+
+/** 受控输入必须走原生 value setter 再派发事件，React 才会把变更收进 state。 */
+async function setValue(node, value) {
+  assert.ok(node !== null && node !== undefined, "要填写的节点必须存在");
+  const view = node.ownerDocument.defaultView;
+  const prototypes = {
+    INPUT: view.HTMLInputElement.prototype,
+    TEXTAREA: view.HTMLTextAreaElement.prototype,
+    SELECT: view.HTMLSelectElement.prototype,
+  };
+  const descriptor = Object.getOwnPropertyDescriptor(prototypes[node.tagName], "value");
+  await act(async () => {
+    descriptor.set.call(node, value);
+    node.dispatchEvent(new view.Event(node.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
