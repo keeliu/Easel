@@ -159,6 +159,30 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
 
 结论：服务当**能力**持有——`lazyService(ctx, name)` 返回取值函数，真正要用的时候才解析；并且自检与执行必须共用同一条解释器候选链，否则「自检说正常、一执行说不可用」这种自相矛盾还会再出现。
 
+### D20：登录以状态文件为唯一真源，插件不新建登录协议
+
+参考实现已经定好契约（`_repo/web/app.py:3277-3450` 与 `_repo/skills/shared/scripts/login_state.py`）：`STATES=("starting","qr_ready","scanned","sms_required","verifying","success","expired","error")`、`write_status()` 用临时文件加 rename 原子写 `{state,message,qr,ts}`、`read_sms_code()` 读到即 `unlink`（只消费一次）。
+
+插件因此只做四件事：按平台描述符拼 argv 启动脚本、读状态文件、把二维码文件按二进制端点交给面板、把用户输入的短信码写进脚本约定的 `<id>.code`。**有意不新建**：不自定义登录协议、不解析二维码内容、不代收或代存任何凭据；面板显示的每个字都来自脚本写出的状态文件——D7 的「门禁放在既有脚本上」同一原则，在这里落在登录上。
+
+### D21：登录任务的生命周期挂在服务内存表，异常退出必须落成终态
+
+登录脚本是 180 秒量级的长流程，因此 `lib/host/exec.js` 增加 `startCommand()`：返回 `{argv,cwd,handle,done,cancel,collectedText}` 但**不 await** `handle.done`，且 `done` 永不 reject（失败折叠成 `{ok:false,error}`）——否则长流程的错误会变成未处理的 rejection 把进程带崩。`lib/host/accounts.js` 用 `loginJobs` 内存表持有在跑的任务，`loginStatusOf()` 把「脚本已退出却仍停在 starting/unknown」翻译成带退出码的 `rawState:"error"`（照 `_repo/web/app.py:3321` 的行为），并叠加 `(timeoutSeconds+30)` 秒兜底取消；任务句柄 `unref()`，不让一个卡住的脚本拖住进程退出。
+
+### D22：刷新必须原地更新，否则会自激循环
+
+登录成功后账号列表 `reload()`，而 `useResource` 每次重取都把 `data` 清空 → `Resource` 显示 Loading → **整棵子树卸载**（展开中的登录面板消失）→ 重新挂载后 `LoginPanel` 的首次探测又读到 `success` → 再次 `onSettled()` → 再刷新……实测 6 秒内 `/accounts/xiaohongshu/login/status` 被请求 400+ 次、React 的 act 警告刷出 22 万行，测试进程直接跑死（`Promise resolution is still pending but the event loop has already resolved`）。
+
+结论：`useResource` 重取时保留上一份数据（`status:"loading"`、`data` 不变），`Resource` 只在**没有数据**时显示 Loading；需要「换对象不显示旧数据」的详情视图（画像、主题）由调用方加 `key` 整体重挂。这条同时消除了所有「保存后刷新」造成的闪屏与展开态丢失。
+
+### D23：发布交互先预览后执行，`--exec` 只由执行端点拼装
+
+宿主侧 `publish.preview` 早已按 `exec:false` 拼 argv 并跑确定性门禁，只有 `publish.publish` 才追加 `--exec`（`lib/host/publish.js:192-361`）；发布区缺的纯是客户端。因此客户端只做两件事：把表单收成脚本形状的输入（小红书视频 `--video`／图文 `--images`、web 平台 `--media`、B 站 `--tid`、公众号 `--input`/`--html`）交给 `/publish/preview`，把 argv 与门禁结论摊开给用户看；执行前必须显式勾选确认，未勾选时**本地**拦下。客户端不可能自己拼出 `--exec`——它只能选择调用哪个端点。
+
+### D24：登录/发布的 Python 依赖单独自检，并按「缺了还能不能用」分两级
+
+「解释器可执行」不是「脚本能跑」：工作台的受控 venv 由引导脚本按分组安装，本机当初只装了 `core`，而六个平台的登录脚本都 `import playwright`。宿主因此新增 `lib/host/runtime.js:probePythonPackages()`——用 `importlib.util.find_spec` 查询而**不真正 import**（`biliup` 会拉起一串子模块，自检不该付这个开销、也不该承担副作用），并把它接到自检的 `publish-deps` 条目上。分两级是刻意的：`playwright` 缺失报 `missing`（扫码登录与六个平台发布的必经之路），只缺 `biliup`/`requests`/`beautifulsoup4` 报 `degraded`（只影响 B 站上传与资讯类技能）——否则一个不影响登录的包会把「工作台基本可用」误判成不可用。没有解释器时该条目不谎报某个包缺失，而是指向「Python 运行时」那一条，也不发起注定失败的子进程。
+
 ### 安装与激活实测记录（2026-10-09）
 
 - **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。

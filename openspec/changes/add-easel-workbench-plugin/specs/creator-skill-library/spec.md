@@ -99,3 +99,22 @@ Easel 技能通过外部 Python 解释器与 `ffmpeg` 执行，系统 SHALL 能�
 
 - **WHEN** 自检报出 Python 或 `ffmpeg` 缺失
 - **THEN** 对应条目带一段 `hint`，指明要运行的具体命令或要改的具体配置键，而不是只说明「未找到」
+
+### Requirement: 发布与登录的 Python 依赖必须可自检
+
+扫码登录与跨平台发布都是「宿主起子进程、脚本自己开浏览器或上传」，解释器存在并不代表脚本能跑：工作台 SHALL 在环境自检中单独上报「发布与登录依赖」，逐包探测 `playwright`（扫码登录与六个平台发布必需）以及 `biliup`、`requests`、`beautifulsoup4`（B 站上传与资讯类技能）。探测 SHALL 只查询包是否可导入（`importlib.util.find_spec`），MUST NOT 真正导入这些包。缺少登录必需包时该条目 SHALL 为 `missing`，只缺附加包时 SHALL 为 `degraded`，并 SHALL 携带可执行的 `hint`。
+
+#### Scenario: 缺 playwright 时点名并阻止「能干活」的假象
+
+- **WHEN** 解释器存在但 `playwright` 无法导入
+- **THEN** 该条目为 `missing`，点名缺失的包，并在 `hint` 里给出补齐 `--groups core,publish` 的命令与 pip 镜像写法
+
+#### Scenario: 只缺 B 站上传依赖时降级而不是报缺失
+
+- **WHEN** `playwright` 可导入，但 `biliup` 之类的附加包不可导入
+- **THEN** 该条目为 `degraded`，说明只影响 B 站上传与资讯类技能，并提示 `biliup` 命令行用官方二进制放进 `PATH` 或 `~/.local/bin` 同样可用
+
+#### Scenario: 没有解释器时不谎报某个包缺失
+
+- **WHEN** 外部 Python 解释器不存在
+- **THEN** 该条目指向「Python 运行时」一条，且不发起注定失败的包探测（不自称某个包缺失）

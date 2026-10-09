@@ -105,12 +105,24 @@
 - [x] 12.4 账号验证的子进程延迟解析（真实缺陷）：`lib/index.js` 过去在 `apply()` 里给 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册晚于插件挂载，于是账号验证永久报 `runtime-missing`，自检却因为请求时解析而说能力正常。改为 `lazyService(ctx, "subprocess")`（`lib/host/services.js`）＋ `runCommand` 内解析（`lib/host/exec.js`），并让 `resolvePython` 与自检共用同一条候选链。验证方式：`node --test test/index.test.mjs` 的「宿主子进程服务晚于插件挂载就绪时，账号验证仍能执行（延迟解析）」用例（挂载后再注入服务，验证请求仍能起子进程）
 - [x] 12.5 按用户要求装好 ffmpeg：从 npm 取 `@ffmpeg-installer/linux-x64`（4.1.0）静态构建，落到 `/data/dsh/home/.local/bin/ffmpeg`（0755，探测链已覆盖该目录）。验证方式：`ffmpeg -version` 输出 `ffmpeg version N-47683-g0e8eb07980-static`（含 libx264/libx265/aac）；活实例 `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`（ffmpeg 解析到 `/data/dsh/home/.local/bin/ffmpeg`）
 
+## 13. 扫码登录、发布与热点（实际使用反馈第三批）
+
+用户报「在验证账号的时候提示进程不可用」，并追问「怎么绑定会话去生成内容、画像怎么维护、日历/热点/选题为什么空白」。进程不可用已在 12.4 修掉；本批把**仍然只是空壳的两处**补齐，并让热点与发布在面板里真正可用（详见 `design.md` 的 D20–D23 与两份 spec delta）：
+
+- [x] 13.1 宿主侧扫码登录流水线：`lib/host/accounts.js` 增加 `startLogin` / `loginStatus` / `cancelLogin` / `submitSmsCode` / `qrImage`（内存任务表 `loginJobs`、以脚本写出的状态文件为唯一真源、脚本未写终态即退出则按退出码报 `error`、`(timeoutSeconds+30)s` 兜底取消、句柄 `unref()`）；`lib/host/exec.js` 增加 `startCommand()`（不 await `handle.done`，`done` 永不 reject）；平台描述符补 `login.noProxy`（小红书/抖音/公众号）、`login.smsCodeFile`（抖音）、`login.cookieFile`（B 站）并按需拼 `--no-proxy` / `--sms-code-file` / `--cookie`。验证方式：`node --test test/accounts.test.mjs` 的「扫码登录流水线」4 例（启动参数、状态轮询、取消写 expired、短信码落盘与校验）；**实测结论**：32/32 通过，含既有 argv 断言同步更新
+- [x] 13.2 登录宿主路由：`lib/host/web.js` 增加 `POST /accounts/:id/login`、`GET /accounts/:id/login/status`、`DELETE /accounts/:id/login`、`POST /accounts/:id/login/sms`、`GET /accounts/:id/qr`（二进制 PNG，沿用既有的 `res.writeHead` 先例，`handle()` 因 `res.headersSent` 跳过 JSON 包装）。验证方式：新增 `node --test test/web.test.mjs` 4 例（启动、状态、二维码字节与 content-type、404 与 405）；**实测结论**：4/4 通过（假请求必须始终 emit `end`，否则 `handle()` 会挂住——见实现期记录）
+- [x] 13.3 面板内扫码登录：账号行加「扫码登录」开关，展开 `LoginPanel`：启动 `POST /accounts/:id/login`、1.5 秒轮询状态（脚本不再运行即停）、二维码指向 `GET /accounts/:id/qr?ts=<二维码时间戳>`、需要短信码时回填（只发 4–8 位数字）、可取消；宿主枚举按字典本地化。验证方式：`node --test test/client.test.mjs` 的「扫码登录：启动走 POST /accounts/:id/login，二维码与短信码如实呈现」用例；**实测结论**：通过（断言启动方法与次数、二维码 `src` 与 `ts`、短信码请求体 `{code:"123456"}`、成功态显示「已成功」）
+- [x] 13.4 发布先预览后执行：发布区加 `PublishForm`——选平台（七平台）与 `outputs/<主题>/` 下的本地产物、填标题/正文/标签，预览走 `POST /publish/preview`（宿主按 `exec:false` 拼 argv 并跑门禁），执行必须显式勾选确认，未勾选时本地拦下；参数按平台脚本形状拼装（小红书视频 `--video`／图文 `--images`、web 平台 `--media`、B 站 `--tid`、公众号 `--input`/`--html`）。验证方式：`node --test test/client.test.mjs` 的「发布：预览不执行、执行必须先勾选确认，参数按平台脚本形状拼装」用例；**实测结论**：通过
+- [x] 13.5 热点来源可选并可沉淀为选题：热点区加来源多选（六个源），选择结果以 `?ids=` 传宿主（全选或全不选时省略参数）；每条线索可「存为选题」（`POST /topics`，来源标记为热点）并就地回报；抓取失败的来源照实呈现。验证方式：`node --test test/client.test.mjs` 的「热点：可选来源用 ?ids= 传给宿主，线索能存进选题库」用例；**实测结论**：通过
+- [x] 13.6 刷新不得重建子树（真实缺陷）：`useResource` 重取时保留上一份数据、`Resource` 只在没有数据时显示 Loading、画像与主题详情加 `key`。修前实测：登录成功后列表刷新 → 子树卸载重建 → 登录面板重挂又报成功 → 再刷新，6 秒内 `/login/status` 被请求 400+ 次、React 警告刷出 22 万行、测试进程跑死。验证方式：`node --test test/client.test.mjs` 3.0 秒跑完 18 项、日志里 0 条 act 警告；**实测结论**：通过（修复前同一条用例 20 秒超时）
+- [x] 13.7 发布与登录依赖自检（真实缺口）：该 venv 是用 `--groups core` 建的，而六个平台的登录脚本都 `import playwright`，于是「解释器 ok」并不等于「能扫码登录」——面板只会弹脚本原样的 `ModuleNotFoundError`。新增 `lib/host/runtime.js` 的 `probePythonPackages()`（用 `importlib.util.find_spec` 逐包查询，不真正 import）与 `lib/host/selfcheck.js` 的 `publish-deps` 条目：缺 `playwright` 报 `missing`，只缺 `biliup`/`requests`/`beautifulsoup4` 报 `degraded`（只影响 B 站上传与资讯类技能），没有解释器时指向 Python 那一条且不发注定失败的探测。验证方式：`node --test test/selfcheck.test.mjs`（9 例）与 `node --test test/runtime.test.mjs`（28 例）；**实测结论**：通过；本机用镜像补齐了 `playwright==1.60.0`（`~/.cache/ms-playwright` 里已有 `chromium-1223`，与 1.60.0 期望的可执行路径一致）、`requests`、`urllib3`、`beautifulsoup4`，`biliup` 在 sdist 元数据阶段挂死（`pip` 长时间停在 `Preparing metadata`）故保持 `degraded`
+
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **298 项全绿**（`fail 0`；
-  早期记录为 277 项，§10–§12 的用例陆续补入后为 298）；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **319 项全绿**（`fail 0`；
+  早期记录为 277 项，§10–§13 的用例陆续补入后为 319）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -191,6 +203,38 @@
   `node scripts/build-client.mjs` → `lib/client.js` 79183 字节；`ffmpeg -version` 输出静态构建
   `N-47683-g0e8eb07980-static`（已放到 `/data/dsh/home/.local/bin/ffmpeg`），活实例
   `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`。
+- **扫码登录、发布与热点（2026-10-09，第 15 项实现期改进，对应用户「怎么绑定会话生成内容 / 画像怎么维护 /
+  账号验证提示进程不可用」的第三批反馈，见 design D20–D23）**：先做覆盖度侦察，结论是「大半已实现、空壳
+  只有两处」——**扫码登录宿主侧根本没有启动端点**（`lib/host/accounts.js:435-452` 的 `loginPlan()` 只回一条
+  命令，不 spawn、不出码、不轮询；`lib/host/web.js:303` 只暴露 `login-plan`），**发布区客户端没有入口**
+  （`src/client.js:787-830` 只渲染平台表与历史），而「真发到平台」的路径宿主早已接通
+  （`lib/host/web.js:312` → `lib/host/publish.js:261-361` → 脚本 `--exec`）。改动：① 宿主新增
+  `startLogin` / `loginStatus` / `cancelLogin` / `submitSmsCode` / `qrImage` 与 `lib/host/exec.js` 的
+  `startCommand()`（不 await `handle.done`、`done` 永不 reject），`lib/host/web.js` 增五条路由（含二维码
+  二进制 PNG），平台描述符补 `--no-proxy` / `--sms-code-file` / `--cookie`；② 客户端新增 `LoginPanel`
+  （启动 / 1.5 秒轮询 / 二维码 `?ts=` 破缓存 / 短信码回填 / 取消）、`PublishForm`（预览 → 勾选确认 → 执行）、
+  热点来源多选（`?ids=`）与「存为选题」；③ **真实缺陷**——`useResource` 每次重取都把 `data` 清空，
+  于是「登录成功 → 刷新账号列表」把整棵子树卸载重建，重建出的 `LoginPanel` 首次探测又读到 `success`
+  再次触发刷新，形成自激循环（实测 6 秒内 `/accounts/xiaohongshu/login/status` 被请求 400+ 次、React 的
+  act 警告刷出 22 万行、用例 20 秒超时且进程 `Promise resolution is still pending`）；改为重取保留上一份
+  数据 + `Resource` 只在没有数据时显示 Loading + 画像/主题详情加 `key` 后，同一条用例 68 ms 通过、日志
+  0 条警告。实测：`node --test test/accounts.test.mjs` → **32/32**；`node --test test/web.test.mjs` → **4/4**
+  （新增：假请求必须始终 `emit("end")`，否则 `handle()` 会挂住）；`node --test test/client.test.mjs` →
+  **18/18**；`node --test test/*.test.mjs` → **319 项全绿**；`node scripts/build-client.mjs` →
+  `lib/client.js` 110608 字节。
+
+- **发布与登录依赖自检（2026-10-09，第 16 项实现期改进，见 design D24）**：把工作台自带的 venv 用
+  `--groups core` 建起来后，自检一直报「Python 运行时 ok」，但六个平台的登录脚本都 `import playwright`
+  ——点「扫码登录」只会在面板里弹一句脚本原样的 `ModuleNotFoundError`。新增
+  `lib/host/runtime.js:probePythonPackages()`（`importlib.util.find_spec` 逐包查询，不真正 import，
+  避免 `biliup` 那种拉起一串子模块的开销）与 `lib/host/selfcheck.js` 的 `publish-deps` 条目，并分两级：
+  缺 `playwright` 报 `missing`（登录与六个平台发布的必经之路），只缺 `biliup`/`requests`/`beautifulsoup4`
+  报 `degraded`（只影响 B 站上传与资讯类技能），没有解释器时指向「Python 运行时」那一条且不发注定失败的
+  探测。实测：本机用镜像补齐 `playwright==1.60.0` + `requests`/`urllib3`/`beautifulsoup4`（`~/.cache/ms-playwright`
+  里已有 `chromium-1223`，与 1.60.0 的期望路径一致，无需再下浏览器）；`biliup` 的 sdist 元数据阶段
+  长时间挂住（`pip` 停在 `Preparing metadata`），因此该项在活实例上是 `degraded`——这与它「只影响 B 站
+  上传」的事实一致，hint 里给了「用官方 release 的 biliup 二进制放进 PATH 或 `~/.local/bin`」这条出路。
+  测试：`node --test test/selfcheck.test.mjs` → 9/9；`node --test test/runtime.test.mjs` → 28/28。
 
 ## 待用户验收（本机无法完成的部分）
 

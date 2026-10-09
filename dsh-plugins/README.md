@@ -102,6 +102,15 @@ bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --recreate        
 - pip 带 `--retries 5 --timeout 30`：本环境的 pip 索引出现过瞬时 `from versions: none`，
   重试即可恢复，不是规格写错。
 - 缺少 `python3` 别名时用 `--python ~/.local/bin/python3.12` 这类带版本号的路径；解释器只需 ≥3.10。
+- **`--groups core` 不够扫码登录**：登录脚本要开浏览器，六个平台都 `import playwright`（只有 B 站登录是
+  纯标准库）。工作台的环境自检为此单列「发布与登录依赖」一项：缺 `playwright` 报缺失，只缺 `biliup` 一类
+  报降级（只影响 B 站上传与资讯类技能）。补装用
+  `bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --groups core,publish`；本机实测
+  `files.pythonhosted.org` 上 47.5 MB 的 playwright wheel 会卡死，给 pip 指定镜像即可
+  （`PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`）。playwright 还需要浏览器内核，若
+  `~/.cache/ms-playwright` 下已有匹配的 `chromium-*` 就无需再下（本机装 `playwright==1.60.0` 时期望
+  `chromium-1223`，恰好已存在）；`biliup` 若卡在 `Preparing metadata`（sdist 构建），可改用官方 release
+  的单文件二进制放进 `PATH` 或 `~/.local/bin`——B 站上传脚本只用 `which biliup` 找命令行。
 
 ### 依赖分组
 

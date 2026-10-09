@@ -121,6 +121,80 @@ export async function runCommand(subprocess, spec) {
   }
 }
 
+/**
+ * 启动一条**长流程**命令并立刻返回句柄（不等待结束）。
+ *
+ * 扫码登录是 180–240 秒量级的流程，而 HTTP 请求不能挂那么久，所以这里与
+ * {@link runCommand} 的区别只有一个：**不 await `handle.done`**。调用方拿到
+ * `handle` 后自行决定何时收尾，并可用 `cancel()` 主动中止。
+ *
+ * `done` 永远不会 reject：失败被折叠成 `{ ok: false, error }`，避免长流程的
+ * 拒绝在无人 await 时变成 unhandled rejection。
+ *
+ * @param {object | (() => object | undefined)} subprocess 同 {@link runCommand}
+ * @param {{ argv: readonly string[], cwd: string, maxBytes?: number, graceMs?: number }} spec
+ * @returns {{
+ *   argv: string[], cwd: string, handle: object,
+ *   done: Promise<{ ok: boolean, exitCode: number | null, signal: string | null, error: unknown }>,
+ *   cancel: (reason?: unknown) => void,
+ *   collectedText: () => { stdout: string, stderr: string },
+ * }}
+ */
+export function startCommand(subprocess, spec) {
+  const { argv, cwd, maxBytes = DEFAULT_MAX_BYTES, graceMs = DEFAULT_GRACE_MS } = spec;
+  const service = typeof subprocess === "function" ? subprocess() : subprocess;
+
+  if (service === undefined || service === null) {
+    throw new EaselError(ERROR_CODES.RUNTIME_MISSING, "DSH 子进程服务不可用，无法执行外部命令。", {
+      details: { argv: [...argv] },
+    });
+  }
+
+  const controller = new AbortController();
+  let handle;
+  try {
+    handle = service.spawn({
+      argv: [...argv],
+      cwd,
+      stdio: { stdin: "ignore", stdout: { maxBytes }, stderr: { maxBytes } },
+      graceMs,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new EaselError(
+      ERROR_CODES.RUNTIME_MISSING,
+      `无法启动命令：${argv[0]}（${error instanceof Error ? error.message : String(error)}）`,
+      { cause: error, details: { argv: [...argv], cwd } },
+    );
+  }
+
+  const done = Promise.resolve(handle.done).then(
+    (outcome) => ({
+      ok: true,
+      exitCode: outcome?.exitCode ?? null,
+      signal: outcome?.signal ?? null,
+      error: null,
+    }),
+    (error) => ({ ok: false, exitCode: null, signal: null, error }),
+  );
+
+  return {
+    argv: [...argv],
+    cwd,
+    handle,
+    done,
+    cancel(reason) {
+      controller.abort(reason ?? new EaselError(ERROR_CODES.RUNTIME_MISSING, "命令已被取消。"));
+    },
+    collectedText() {
+      return {
+        stdout: readCollected(handle.collected?.stdout).text,
+        stderr: readCollected(handle.collected?.stderr).text,
+      };
+    },
+  };
+}
+
 /** 把一条命令渲染成可复制、可审计的字符串（不做 shell 转义，只加引号）。 */
 export function renderCommand(argv) {
   return argv.map((part) => (/[\s"'$`\\]/.test(part) ? JSON.stringify(part) : part)).join(" ");

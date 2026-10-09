@@ -811,3 +811,279 @@ async function setValue(node, value) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+test("扫码登录：启动走 POST /accounts/:id/login，二维码与短信码如实呈现", async () => {
+  const calls = [];
+  let statusPayload = {
+    ok: true,
+    platform: "xiaohongshu",
+    rawState: "unauthorized",
+    running: false,
+    qrReady: false,
+    smsRequired: false,
+  };
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    calls.push({ url: target, options: options ?? null });
+
+    if (target.includes("/login/status")) return { status: 200, json: async () => statusPayload };
+    if (target.endsWith("/login")) return { status: 200, json: async () => ({ ok: true, started: true }) };
+    if (target.includes("/login/sms")) return { status: 200, json: async () => ({ ok: true, accepted: true }) };
+    if (target.includes("/accounts")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          accounts: [{ platform: "xiaohongshu", label: "小红书", state: "unauthorized", message: "未授权" }],
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  // 登录面板会自我续期轮询，断言失败时也必须卸载，否则定时器会让整个测试进程退不出去。
+  try {
+  await click(view.container.querySelector('[data-easel-nav="accounts"]'));
+  await flush();
+  assert.equal(view.container.querySelector("[data-easel-login]"), null, "登录面板默认收起");
+
+  await click(view.container.querySelector('[data-easel-login-toggle="xiaohongshu"]'));
+  await flush();
+  const panel = view.container.querySelector('[data-easel-login="xiaohongshu"]');
+  assert.ok(panel !== null, "点「扫码登录」要展开面板");
+  assert.equal(
+    panel.querySelector('[data-easel-login-state="unauthorized"]').textContent,
+    "未授权",
+    "登录态要按字典本地化，而不是露出 rawState",
+  );
+  assert.equal(panel.querySelector("[data-easel-qr]"), null, "脚本没产出二维码之前不能显示图");
+
+  const starts = () => calls.filter((call) => call.url.endsWith("/accounts/xiaohongshu/login"));
+  await click(panel.querySelector("[data-easel-login-start]"));
+  await flush();
+  assert.equal(starts().length, 1, "「开始扫码登录」必须 POST 启动端点");
+  assert.equal(starts()[0].options.method, "POST");
+
+  // 脚本把二维码写进状态目录之后，面板指向宿主的二进制端点，并带 ts 破缓存。
+  statusPayload = {
+    ok: true,
+    platform: "xiaohongshu",
+    rawState: "qr_ready",
+    running: true,
+    qrReady: true,
+    qrTs: 1712345678000,
+    smsRequired: false,
+  };
+  await click(panel.querySelector("[data-easel-login-refresh]"));
+  await flush();
+  const qr = panel.querySelector("[data-easel-qr]");
+  assert.ok(qr !== null, "qrReady 时必须显示二维码");
+  assert.equal(
+    qr.getAttribute("src"),
+    "/easel-workbench/api/accounts/xiaohongshu/qr?ts=1712345678000",
+    "二维码要指向宿主端点并带上二维码时间戳",
+  );
+
+  // 平台风控要短信码时给回填入口；提交只把数字码交给宿主。
+  statusPayload = {
+    ok: true,
+    platform: "xiaohongshu",
+    rawState: "sms_required",
+    running: true,
+    qrReady: true,
+    qrTs: 1712345678000,
+    smsRequired: true,
+  };
+  await click(panel.querySelector("[data-easel-login-refresh]"));
+  await flush();
+  assert.ok(panel.querySelector("[data-easel-login-sms-input]") !== null, "smsRequired 时必须给回填短信码的入口");
+  await setValue(panel.querySelector("[data-easel-login-sms-input]"), "123456");
+  await click(panel.querySelector("[data-easel-login-sms]"));
+  await flush();
+  const smsCalls = calls.filter((call) => call.url.includes("/login/sms"));
+  assert.equal(smsCalls.length, 1, "提交验证码要 POST 短信端点");
+  assert.deepEqual(JSON.parse(smsCalls[0].options.body), { code: "123456" });
+  assert.match(panel.querySelector("[data-easel-login-sms-state]").textContent, /验证码已提交/);
+
+  // 成功态显示本地化的「已成功」，而不是 success。
+  statusPayload = {
+    ok: true,
+    platform: "xiaohongshu",
+    rawState: "success",
+    running: false,
+    qrReady: true,
+    qrTs: 1712345678000,
+    smsRequired: false,
+  };
+  await click(panel.querySelector("[data-easel-login-refresh]"));
+  await flush();
+  assert.equal(panel.querySelector('[data-easel-login-state="success"]').textContent, "已成功");
+  } finally {
+    await view.unmount();
+  }
+});
+
+test("发布：预览不执行、执行必须先勾选确认，参数按平台脚本形状拼装", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    calls.push({ url: target, options: options ?? null });
+    if (target.includes("/publish/platforms")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          platforms: [
+            {
+              id: "xiaohongshu",
+              label: "小红书",
+              style: "xhs",
+              accepts: ["image", "video"],
+              limits: { title: 20, body: 1000, tags: 10 },
+            },
+            { id: "wechat", label: "微信公众号", style: "wechat", accepts: ["article"], limits: { title: 64, body: 0, tags: 0 } },
+          ],
+        }),
+      };
+    }
+    if (target.includes("/publish/preview")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          platform: "xiaohongshu",
+          command: "python3 xhs_publish.py publish --images outputs/秋季护肤/note.md",
+          guard: { blocked: false, exitCode: 0, findings: [], warnings: [] },
+          warnings: [],
+        }),
+      };
+    }
+    if (target.includes("/publish/execute")) {
+      return { status: 200, json: async () => ({ ok: true, exitCode: 0, readback: "published", reason: "" }) };
+    }
+    if (target.includes("/publish/history")) return { status: 200, json: async () => ({ ok: true, records: [] }) };
+    if (target.includes("/projects/")) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, topic: "秋季护肤", files: [{ path: "note.md", name: "note.md", kind: "text", bytes: 12 }] }),
+      };
+    }
+    if (target.includes("/projects")) return { status: 200, json: async () => ({ ok: true, projects: [{ topic: "秋季护肤" }] }) };
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="publish"]'));
+  await flush();
+
+  const form = view.container.querySelector("[data-easel-publish-form]");
+  assert.ok(form !== null, "发布区必须有表单，而不是只有平台表和历史");
+  assert.deepEqual(
+    [...form.querySelector("[data-easel-publish-platform]").options].map((option) => option.value),
+    ["", "xiaohongshu", "wechat"],
+    "平台下拉要来自宿主清单",
+  );
+
+  // 没选平台就点预览：本地拦住，一个请求都不发。
+  await click(form.querySelector("[data-easel-publish-preview]"));
+  await flush();
+  assert.equal(calls.filter((call) => call.url.includes("/publish/preview")).length, 0, "缺平台时不能发请求");
+  assert.match(form.querySelector("[data-easel-publish-error]").textContent, /请先选择平台/);
+
+  await setValue(form.querySelector("[data-easel-publish-platform]"), "xiaohongshu");
+  await setValue(form.querySelector("[data-easel-publish-topic]"), "秋季护肤");
+  await flush();
+  await setValue(form.querySelector("[data-easel-publish-file]"), "note.md");
+  await setValue(form.querySelector("[data-easel-publish-title]"), "秋季护肤三步走");
+  await setValue(form.querySelector("[data-easel-publish-tags]"), "护肤, 通勤");
+  await click(form.querySelector("[data-easel-publish-preview]"));
+  await flush();
+
+  const previews = calls.filter((call) => call.url.includes("/publish/preview"));
+  assert.equal(previews.length, 1, "预览要 POST 预演端点");
+  assert.deepEqual(JSON.parse(previews[0].options.body), {
+    platform: "xiaohongshu",
+    title: "秋季护肤三步走",
+    tags: ["护肤", "通勤"],
+    media: ["outputs/秋季护肤/note.md"],
+  });
+  const previewed = form.querySelector("[data-easel-publish-preview-result]");
+  assert.match(previewed.textContent, /xhs_publish\.py/, "预览要把将要执行的命令摊开给人看");
+  assert.match(previewed.textContent, /内容门禁通过/);
+
+  // 没勾选确认就点发布：本地拦住，绝不真发。
+  await click(form.querySelector("[data-easel-publish-execute]"));
+  await flush();
+  assert.equal(calls.filter((call) => call.url.includes("/publish/execute")).length, 0, "没勾选确认时绝不能真发");
+  assert.match(form.querySelector("[data-easel-publish-error]").textContent, /勾选确认/);
+
+  await click(form.querySelector("[data-easel-publish-confirm]"));
+  await flush();
+  await click(form.querySelector("[data-easel-publish-execute]"));
+  await flush();
+  const executes = calls.filter((call) => call.url.includes("/publish/execute"));
+  assert.equal(executes.length, 1, "勾选确认后必须 POST 执行端点");
+  assert.equal(form.querySelector("[data-easel-publish-result]").getAttribute("data-easel-publish-result"), "ok");
+  assert.match(form.querySelector("[data-easel-publish-result]").textContent, /已发布/);
+
+  await view.unmount();
+});
+
+test("热点：可选来源用 ?ids= 传给宿主，线索能存进选题库", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    calls.push({ url: target, options: options ?? null });
+    if (target.includes("/trends")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          fetchedAt: "2026-10-09T13:00:00Z",
+          sources: [{ source: "weibo", label: "微博", ok: true }],
+          items: [{ title: "某地降温", hot: 12345, url: "https://example.com/hot" }],
+          failures: [],
+        }),
+      };
+    }
+    if (target.includes("/topics")) return { status: 200, json: async () => ({ ok: true, topic: { id: "t9", title: "某地降温" } }) };
+    return { status: 200, json: async () => ({ ok: true, topics: [], items: [] }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="trends"]'));
+  await flush();
+
+  const trendCalls = () => calls.filter((call) => call.url.includes("/trends"));
+  assert.equal(trendCalls().length, 1, "默认抓一次");
+  assert.equal(trendCalls()[0].url.includes("ids="), false, "不选来源时由宿主决定全部来源");
+  assert.equal(view.container.querySelector("[data-easel-fetched-at]").textContent, "2026-10-09T13:00:00Z");
+
+  await click(view.container.querySelector('[data-easel-trend-source="weibo"]'));
+  await flush();
+  assert.equal(trendCalls().length, 2, "勾选来源后要重新抓取");
+  assert.match(trendCalls()[1].url, /\?ids=weibo$/);
+
+  await click(view.container.querySelector('[data-easel-trend-save="0"]'));
+  await flush();
+  const saved = calls.find((call) => call.url.includes("/topics") && call.options !== null && call.options.method === "POST");
+  assert.ok(saved !== undefined, "「存为选题」要 POST /topics");
+  assert.deepEqual(JSON.parse(saved.options.body), { title: "某地降温", note: "https://example.com/hot", source: "trend" });
+  assert.match(view.container.querySelector('[data-easel-trend-save-state="done"]').textContent, /已存进选题库/);
+
+  await view.unmount();
+});
+

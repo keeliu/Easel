@@ -13,12 +13,14 @@ import { fileURLToPath } from "node:url";
 
 import {
   FFMPEG_NAMES,
+  PUBLISH_PACKAGE_NAMES,
   PYTHON_NAMES,
   PYTHON_VERSIONED_NAMES,
   VERSION_PROBE_TIMEOUT_MS,
   isExecutable,
   locateExecutable,
   pathCandidates,
+  probePythonPackages,
   probeRuntime,
   userBinCandidates,
   userBinDirs,
@@ -429,5 +431,64 @@ describe("用户态可执行目录", () => {
     const home = "/home/tester";
     assert.deepEqual(pathCandidates(["python3"], "/opt/bin"), ["/opt/bin/python3"]);
     assert.ok(!pathCandidates(["python3"], "/opt/bin").includes(join(home, ".local", "bin", "python3")));
+  });
+});
+
+describe("probePythonPackages", () => {
+  const PYTHON = "/opt/venv/bin/python";
+
+  function probeWith(stdout, { names = PUBLISH_PACKAGE_NAMES, ...overrides } = {}) {
+    const subprocess = fakeSubprocess({ [PYTHON]: { stdout, ...overrides } });
+    return {
+      subprocess,
+      run: () => probePythonPackages({ subprocess, pythonPath: PYTHON, cwd: "/tmp", names }),
+    };
+  }
+
+  it("全部可导入时 ok，missing 为空", async () => {
+    const { run } = probeWith('{"playwright": true, "biliup": true, "requests": true, "bs4": true}\n');
+    assert.deepEqual(await run(), { ok: true, missing: [] });
+  });
+
+  it("缺哪个就报哪个，并按传入顺序稳定返回", async () => {
+    const { run } = probeWith('{"playwright": true, "biliup": false, "requests": true, "bs4": false}\n');
+    assert.deepEqual(await run(), { ok: false, missing: ["biliup", "bs4"] });
+  });
+
+  it("只看最后一行非空输出：解释器打印的告警不该把结果顶掉", async () => {
+    const { run } = probeWith('UserWarning: 无关输出\n{"playwright": true}\n\n', { names: ["playwright"] });
+    assert.deepEqual(await run(), { ok: true, missing: [] });
+  });
+
+  it("用 find_spec 探测而不是 import（不付导入开销、不承担副作用）", async () => {
+    const { subprocess, run } = probeWith('{"playwright": true}\n', { names: ["playwright"] });
+    await run();
+    const argv = subprocess.calls[0].argv;
+    assert.equal(argv[0], PYTHON);
+    assert.equal(argv[1], "-c");
+    assert.match(argv[2], /importlib\.util/);
+    assert.match(argv[2], /find_spec/);
+    assert.ok(!/(^|\n)\s*import (playwright|biliup|requests|bs4)/.test(argv[2]));
+  });
+
+  it("没有 subprocess 或没有解释器时不抛错，按全缺处理", async () => {
+    assert.deepEqual(await probePythonPackages({}), {
+      ok: false,
+      missing: [...PUBLISH_PACKAGE_NAMES],
+      error: "no-subprocess",
+    });
+    assert.deepEqual(await probePythonPackages({ subprocess: fakeSubprocess(), pythonPath: undefined }), {
+      ok: false,
+      missing: [...PUBLISH_PACKAGE_NAMES],
+      error: "no-subprocess",
+    });
+  });
+
+  it("脚本非零退出时按全缺处理，并带上原因", async () => {
+    const { subprocess } = probeWith("", { exitCode: 1, stderr: "boom" });
+    const result = await probePythonPackages({ subprocess, pythonPath: PYTHON, cwd: "/tmp" });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.missing, [...PUBLISH_PACKAGE_NAMES]);
+    assert.equal(typeof result.error, "string");
   });
 });

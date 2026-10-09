@@ -35,6 +35,9 @@ export const FFMPEG_NAMES = Object.freeze(["ffmpeg"]);
 /** 探测版本号时的超时（毫秒）；探测失败不影响「可执行」结论。 */
 export const VERSION_PROBE_TIMEOUT_MS = 10_000;
 
+/** 探测 Python 包是否可导入时的超时（毫秒）；冷启动的解释器可能较慢。 */
+export const PACKAGE_PROBE_TIMEOUT_MS = 20_000;
+
 /** 判断一个绝对路径是否是可执行文件。 */
 export async function isExecutable(path) {
   if (typeof path !== "string" || path === "") return false;
@@ -108,6 +111,53 @@ async function probeVersion(subprocess, argv, cwd) {
     return first === undefined ? undefined : first;
   } catch {
     return undefined;
+  }
+}
+
+/** 发布与登录脚本真正用到的 Python 包，即引导脚本的 `--groups publish`。 */
+export const PUBLISH_PACKAGE_NAMES = Object.freeze(["playwright", "biliup", "requests", "bs4"]);
+
+/**
+ * 探测一组 Python 包是否可导入。
+ *
+ * 用 `importlib.util.find_spec` 而不是真正 `import`：`biliup` 会拉起一串子模块，
+ * 自检只想知道「装没装」，不该付导入开销、也不该承担导入副作用。
+ *
+ * @param {{
+ *   subprocess?: object,
+ *   pythonPath?: string,
+ *   cwd?: string,
+ *   names?: readonly string[],
+ * }} deps
+ * @returns {Promise<{ ok: boolean, missing: string[], error?: string }>}
+ */
+export async function probePythonPackages(deps) {
+  const { subprocess, pythonPath, cwd, names = PUBLISH_PACKAGE_NAMES } = deps;
+  if (subprocess === undefined || subprocess === null || typeof pythonPath !== "string") {
+    return { ok: false, missing: [...names], error: "no-subprocess" };
+  }
+  const source = [
+    "import importlib.util as u, json",
+    `names = ${JSON.stringify([...names])}`,
+    "print(json.dumps({n: u.find_spec(n) is not None for n in names}))",
+  ].join("\n");
+  try {
+    const result = await runCommand(subprocess, {
+      argv: [pythonPath, "-c", source],
+      cwd,
+      timeoutMs: PACKAGE_PROBE_TIMEOUT_MS,
+      maxBytes: 64 * 1024,
+    });
+    const line = String(result.stdout ?? "")
+      .split("\n")
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .pop();
+    const found = JSON.parse(line);
+    const missing = names.filter((name) => found?.[name] !== true);
+    return { ok: missing.length === 0, missing };
+  } catch (error) {
+    return { ok: false, missing: [...names], error: String(error?.message ?? error) };
   }
 }
 

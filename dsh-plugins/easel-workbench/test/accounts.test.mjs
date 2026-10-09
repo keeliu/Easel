@@ -10,7 +10,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { describe, it } from "node:test";
@@ -25,6 +25,7 @@ import {
   buildAccountStatsArgv,
   buildLoginArgv,
   buildVerifyArgv,
+  codeFileFor,
   createAccountsService,
   extractJson,
   hasBiliSession,
@@ -160,6 +161,7 @@ describe("平台清单与常量", () => {
       "python3",
       "/repo/skills/shared/scripts/xhs_publish.py",
       "login",
+      "--no-proxy",
       "--qr-out",
       "/state/xiaohongshu.png",
       "--status-file",
@@ -180,7 +182,32 @@ describe("平台清单与常量", () => {
       "--timeout",
       "180",
     ]);
+    // 抖音：多一个一次性短信码文件；B站：多一个 cookie 文件（都与脚本 argparse 对齐）
+    assert.deepEqual(buildLoginArgv("douyin", input).slice(3), [
+      "--no-proxy",
+      "--qr-out",
+      "/state/douyin.png",
+      "--status-file",
+      "/state/douyin.json",
+      "--timeout",
+      "180",
+      "--sms-code-file",
+      "/state/douyin.code",
+    ]);
+    assert.deepEqual(buildLoginArgv("bilibili", input).slice(3), [
+      "--qr-out",
+      "/state/bilibili.png",
+      "--status-file",
+      "/state/bilibili.json",
+      "--timeout",
+      "180",
+      "--cookie",
+      "/repo/cookies.json",
+    ]);
     assert.equal(buildLoginArgv("wechat-oa", input).at(-1), "240");
+    // 只有脚本真的支持时才加 --no-proxy：公众号（weixin_mp_stats）支持，快手（web_publisher）不支持
+    assert.equal(buildLoginArgv("wechat-oa", input).includes("--no-proxy"), true);
+    assert.equal(buildLoginArgv("kuaishou", input).includes("--no-proxy"), false);
     assert.deepEqual(buildVerifyArgv("bilibili", { python: "python3", repoRoot: "/repo" }), [
       "python3",
       "/repo/skills/shared/scripts/bili_login.py",
@@ -491,6 +518,207 @@ describe("stats 归因 —— 失败报原因、无残留数值（6.8）", () =>
     );
     await assert.rejects(
       () => serviceFor(env, { python: null }).stats("douyin"),
+      (error) => error.code === ERROR_CODES.RUNTIME_MISSING,
+    );
+  });
+});
+
+/**
+ * 可控子进程替身：`done` 由 `finish()` 决定何时、以什么结果结束；
+ * 收到 `signal` 的 abort 时按真实子进程被终止的方式结束（`exitCode: null`）。
+ */
+function deferredSubprocess(plan = []) {
+  const calls = [];
+  const pending = [];
+  return {
+    calls,
+    pending,
+    /** 结束第 `index` 个仍在运行的子进程。 */
+    finish(response = {}, index = 0) {
+      const entry = pending.filter((item) => item.settled !== true)[index];
+      if (entry === undefined) throw new Error("没有正在运行的子进程");
+      entry.settled = true;
+      entry.resolve({ exitCode: response.exitCode ?? 0, signal: response.signal ?? null });
+      return entry;
+    },
+    spawn(spec) {
+      const response = plan[calls.length] ?? {};
+      calls.push(spec);
+      const reader = (text) => ({
+        readFrom(offset) {
+          return { text: text.slice(offset), nextOffset: text.length, lossy: false };
+        },
+      });
+      const entry = { settled: false, resolve: null };
+      const done = new Promise((resolve) => {
+        entry.resolve = resolve;
+      });
+      pending.push(entry);
+      if (response.auto === true) {
+        queueMicrotask(() => {
+          entry.settled = true;
+          entry.resolve({ exitCode: response.exitCode ?? 0, signal: response.signal ?? null });
+        });
+      }
+      spec.signal?.addEventListener(
+        "abort",
+        () => {
+          if (entry.settled === true) return;
+          entry.settled = true;
+          entry.resolve({ exitCode: null, signal: "SIGTERM" });
+        },
+        { once: true },
+      );
+      return {
+        collected: { stdout: reader(String(response.stdout ?? "")), stderr: reader(String(response.stderr ?? "")) },
+        done,
+      };
+    },
+  };
+}
+
+/** 等 `job.finished` 这类微任务写回。 */
+function tick() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+describe("扫码登录流水线", () => {
+  it("启动会清掉上一轮残留，运行期间状态来自任务句柄与状态文件", async () => {
+    const env = await makeEnv();
+    const subprocess = deferredSubprocess([{}]);
+    const service = serviceFor(env, { subprocess });
+    const statusPath = statusFileFor("douyin", env.loginStateDir);
+    const qrPath = qrFileFor("douyin", env.loginStateDir);
+
+    // 上一轮的残留：旧状态、旧二维码、旧验证码文件
+    await writeJson(statusPath, { state: "success", message: "上一轮" });
+    await writeFile(qrPath, "stale", "utf8");
+    await writeFile(codeFileFor("douyin", env.loginStateDir), "0000", "utf8");
+
+    const started = await service.startLogin("douyin");
+    assert.equal(started.started, true);
+    assert.equal(started.rawState, "starting");
+    assert.equal(started.outsideRepo, true);
+    assert.equal(started.qrPath, qrPath);
+    assert.match(started.command, /douyin_publish\.py login/);
+    assert.equal(subprocess.calls[0].cwd, env.repoRoot);
+    assert.equal(subprocess.calls[0].argv.includes("--sms-code-file"), true);
+    for (const stale of [statusPath, qrPath, codeFileFor("douyin", env.loginStateDir)]) {
+      await assert.rejects(() => readFile(stale, "utf8"), { code: "ENOENT" });
+    }
+
+    // 已经在跑：不允许重复启动
+    await assert.rejects(
+      () => service.startLogin("douyin"),
+      (error) => error.code === ERROR_CODES.INVALID_INPUT,
+    );
+
+    // 尚未出码
+    const before = await service.loginStatus("douyin");
+    assert.equal(before.rawState, "starting");
+    assert.equal(before.running, true);
+    assert.equal(before.qrReady, false);
+    assert.equal(before.accountState, "unknown");
+    await assert.rejects(
+      () => service.qrImage("douyin"),
+      (error) => error.code === ERROR_CODES.NOT_FOUND,
+    );
+
+    // 脚本出码并写状态
+    await writeFile(qrPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeJson(statusPath, { state: "qr_ready", message: "请用抖音扫码", qr: qrPath, ts: 1 });
+    const ready = await service.loginStatus("douyin");
+    assert.equal(ready.rawState, "qr_ready");
+    // 出码仍是「进行中」，只有 success 才算 authorized（见 stateToAccountState）
+    assert.equal(ready.accountState, "unknown");
+    assert.equal(ready.qrReady, true);
+    assert.equal(ready.qrBytes, 4);
+    assert.equal(ready.message, "请用抖音扫码");
+    assert.equal(ready.stateSource, "plugin-login-state");
+    const image = await service.qrImage("douyin");
+    assert.equal(image.path, qrPath);
+    assert.equal(isInside(env.loginStateDir, image.path), true);
+
+    // 短信码：去非数字后写文件；长度不合规直接拒绝且不写文件
+    await rm(codeFileFor("douyin", env.loginStateDir), { force: true });
+    await service.submitSmsCode("douyin", "12ab3456");
+    assert.equal(await readFile(codeFileFor("douyin", env.loginStateDir), "utf8"), "123456");
+    await rm(codeFileFor("douyin", env.loginStateDir), { force: true });
+    for (const bad of ["12", "1234567890", ""]) {
+      await assert.rejects(
+        () => service.submitSmsCode("douyin", bad),
+        (error) => error.code === ERROR_CODES.INVALID_INPUT,
+      );
+    }
+    await assert.rejects(() => readFile(codeFileFor("douyin", env.loginStateDir), "utf8"), { code: "ENOENT" });
+
+    // 取消：子进程被终止，且不成功的登录必须落成 expired（否则界面一直转圈）
+    const cancelled = await service.cancelLogin("douyin");
+    assert.equal(cancelled.cancelled, true);
+    const after = await service.loginStatus("douyin");
+    assert.equal(after.rawState, "expired");
+    assert.equal(after.running, false);
+    assert.equal(after.message, "登录已取消。");
+    // 没有在跑的任务时再取消是幂等的
+    const again = await service.cancelLogin("douyin");
+    assert.equal(again.cancelled, false);
+  });
+
+  it("脚本没写状态就退出时给出可执行的错误，而不是永远停在启动中", async () => {
+    const env = await makeEnv();
+    const subprocess = deferredSubprocess([{ stderr: "ModuleNotFoundError: No module named 'playwright'" }]);
+    const service = serviceFor(env, { subprocess });
+
+    await service.startLogin("xiaohongshu");
+    const running = await service.loginStatus("xiaohongshu");
+    assert.equal(running.rawState, "starting");
+    assert.equal(running.running, true);
+
+    subprocess.finish({ exitCode: 1 });
+    await tick();
+    const failed = await service.loginStatus("xiaohongshu");
+    assert.equal(failed.rawState, "error");
+    assert.equal(failed.accountState, "unauthorized");
+    assert.equal(failed.running, false);
+    assert.equal(failed.exitCode, 1);
+    assert.match(failed.message, /退出码 1/);
+    assert.match(failed.message, /playwright/);
+  });
+
+  it("状态完全来自脚本写的状态文件；未知平台一律拒绝", async () => {
+    const env = await makeEnv();
+    const service = serviceFor(env);
+
+    const unknown = await service.loginStatus("kuaishou");
+    assert.equal(unknown.rawState, "unknown");
+    assert.equal(unknown.accountState, "unknown");
+    assert.equal(unknown.running, false);
+    assert.equal(unknown.qrReady, false);
+
+    await writeJson(statusFileFor("kuaishou", env.loginStateDir), { state: "success", message: "已登录", ts: 2 });
+    const ok = await service.loginStatus("kuaishou");
+    assert.equal(ok.rawState, "success");
+    assert.equal(ok.accountState, "authorized");
+
+    for (const call of [
+      () => service.startLogin("不存在的平台"),
+      () => service.loginStatus("不存在的平台"),
+      () => service.cancelLogin("不存在的平台"),
+      () => service.submitSmsCode("不存在的平台", "1234"),
+      () => service.qrImage("不存在的平台"),
+    ]) {
+      await assert.rejects(call, (error) => error.code === ERROR_CODES.INVALID_INPUT);
+    }
+  });
+
+  it("没有解释器时不启动登录；缺子进程服务同样报错", async () => {
+    const env = await makeEnv();
+    await assert.rejects(
+      () => serviceFor(env, { python: null }).startLogin("douyin"),
+      (error) => error.code === ERROR_CODES.RUNTIME_MISSING,
+    );
+    await assert.rejects(
+      () => serviceFor(env, { subprocess: null }).startLogin("douyin"),
       (error) => error.code === ERROR_CODES.RUNTIME_MISSING,
     );
   });

@@ -15,11 +15,14 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { UPSTREAM_READ_ONLY_PREFIXES } from "./config.js";
-import { probeRuntime } from "./runtime.js";
+import { PUBLISH_PACKAGE_NAMES, probePythonPackages, probeRuntime } from "./runtime.js";
 import { serviceOf } from "./services.js";
 
 /** 自检结果的条目状态。 */
 export const CHECK_STATUSES = Object.freeze(["ok", "missing", "degraded"]);
+
+/** 扫码登录与六个平台发布的必经依赖：缺它就无法在面板里完成登录。 */
+export const LOGIN_REQUIRED_PACKAGES = Object.freeze(["playwright"]);
 
 /** 依 `status` 汇总。 */
 function summarize(entries) {
@@ -45,10 +48,11 @@ async function directoryInfo(absolute) {
  *   runtime: Record<string, any>,
  *   paths: Record<string, any>,
  *   probe?: Function,
+ *   probePackages?: Function,
  * }} deps
  */
 export function createSelfcheckService(deps) {
-  const { ctx, runtime, paths, probe = probeRuntime } = deps;
+  const { ctx, runtime, paths, probe = probeRuntime, probePackages = probePythonPackages } = deps;
 
   return {
     /**
@@ -103,6 +107,54 @@ export function createSelfcheckService(deps) {
               : `ffmpeg 只能由系统提供，插件不自动安装：Debian/Ubuntu 用 ${installFfmpeg}，macOS 用 brew install ffmpeg；没有包管理器权限时，可把静态构建放到 ~/.local/bin/ffmpeg（插件会自动查找），或在插件配置里指定 ffmpegExecutable。缺它只影响视频与音频合成，其余区域照常可用。`,
         });
       }
+
+      // 扫码登录与跨平台发布都是「宿主起子进程、脚本自己开浏览器/上传」的形态：解释器
+      // 在不在只是第一步，脚本真正 import 的包也得在。分开报一项，是因为缺包时面板里
+      // 只会看到脚本原样抛出的 ModuleNotFoundError，用户无从判断该装什么。
+      //
+      // 分两级：`playwright` 是扫码登录与六个平台发布的必经之路，缺它只能报 missing；
+      // 引导脚本 `publish` 组里的其余包只影响 B 站上传与资讯类技能，缺了报 degraded，
+      // 避免把「工作台基本可用」误判成不可用。
+      const pythonPath = probed.python?.path ?? null;
+      const packages =
+        pythonPath === null
+          ? { ok: false, missing: [...PUBLISH_PACKAGE_NAMES], error: "no-python" }
+          : await probePackages({ subprocess, pythonPath, cwd: runtime.easelRoot ?? process.cwd() }).catch((error) => ({
+              ok: false,
+              missing: [...PUBLISH_PACKAGE_NAMES],
+              error: String(error?.message ?? error),
+            }));
+      const missingPackages = packages.missing ?? [];
+      const missingLoginPackages = missingPackages.filter((name) => LOGIN_REQUIRED_PACKAGES.includes(name));
+      const status =
+        pythonPath === null || missingLoginPackages.length > 0
+          ? "missing"
+          : missingPackages.length > 0
+            ? "degraded"
+            : "ok";
+      entries.push({
+        id: "publish-deps",
+        label: "发布与登录依赖",
+        status,
+        path: pythonPath,
+        missing: missingPackages,
+        detail:
+          pythonPath === null
+            ? "未解析到 Python 运行时，无法探测发布与登录依赖；先按上一条把 Python 准备好。"
+            : status === "ok"
+              ? `扫码登录与发布所需的包都可导入：${PUBLISH_PACKAGE_NAMES.join("、")}。`
+              : status === "missing"
+                ? `扫码登录必需的包无法导入：${missingLoginPackages.join("、")}；缺它时点「扫码登录」或「发布」会在脚本启动时报 ModuleNotFoundError。`
+                : `登录与多数平台发布可用；还缺 ${missingPackages.join("、")}，只影响 B 站上传与资讯类技能。`,
+        hint:
+          status === "ok"
+            ? null
+            : pythonPath === null
+              ? "先按「Python 运行时」一条把解释器准备好，再回来复检这一项。"
+              : status === "missing"
+                ? `运行 ${bootstrap} --groups core,publish 补齐（网络慢时给 pip 指定镜像，例如 PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple）；playwright 还需要浏览器内核，若 ~/.cache/ms-playwright 下已有 chromium 就无需再装。`
+                : `运行 ${bootstrap} --groups core,publish 可补齐这些包；其中 B 站上传用的是 biliup 命令行，直接下载官方 release 的二进制放进 PATH 或 ~/.local/bin 同样可用（其余平台不受影响）。`,
+      });
 
       const easelRoot = runtime.easelRoot;
       const repoInfo = await directoryInfo(easelRoot);

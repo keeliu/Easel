@@ -12,7 +12,7 @@
  */
 
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { EaselError, ERROR_CODES, attempt } from "./errors.js";
 import { serviceOf } from "./services.js";
@@ -301,6 +301,30 @@ export function createWebService(deps) {
   router.get("/accounts/:id/stats", async (request) => accounts.stats(request.params.id));
   router.post("/accounts/:id/verify", async (request) => accounts.verify(request.params.id));
   router.post("/accounts/:id/login-plan", async (request) => accounts.loginPlan(request.params.id));
+
+  /**
+   * 扫码登录闭环：启动 → 轮询状态 → 取二维码 → 回填短信码 → 取消。
+   *
+   * 二维码是 PNG 二进制响应，走与 `/files` 相同的先例（`handle()` 在
+   * `res.headersSent` 之后不再包 JSON）。插件不接触凭据：它只是把用户
+   * 本该自己在终端跑的那条登录命令变成一次点击。
+   */
+  router.post("/accounts/:id/login", async (request) => accounts.startLogin(request.params.id));
+  router.get("/accounts/:id/login/status", async (request) => accounts.loginStatus(request.params.id));
+  router.delete("/accounts/:id/login", async (request) => accounts.cancelLogin(request.params.id));
+  router.post("/accounts/:id/login/sms", async (request) =>
+    accounts.submitSmsCode(request.params.id, request.body?.code),
+  );
+  router.get("/accounts/:id/qr", async (request, res) => {
+    const info = await accounts.qrImage(request.params.id);
+    const data = await readFile(info.path);
+    res.writeHead(200, {
+      "content-type": "image/png",
+      "content-length": String(data.byteLength),
+      "cache-control": "no-store",
+    });
+    res.end(data);
+  });
 
   router.get("/publish/platforms", async () => ({ platforms: publish.listPlatforms() }));
   router.get("/publish/history", async (request) => {
