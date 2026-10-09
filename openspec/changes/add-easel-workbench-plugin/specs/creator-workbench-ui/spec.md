@@ -98,3 +98,31 @@
 
 - **WHEN** 工作台请求收到插件返回的 `{"ok":false,"code":"invalid-input","message":…}`
 - **THEN** 面板按该响应体的 `message` 呈现错误态，MUST NOT 改写成宿主未挂载提示
+
+### Requirement: 界面不得直出宿主枚举值
+
+工作台界面 SHALL 把宿主返回的状态枚举（`ok` / `missing` / `degraded` / `authorized` / `unauthorized` / `scheduled` 等）按当前语言呈现；字典缺少对应词条时 SHALL 回落显示原始值，MUST NOT 显示空白或 `value.` 前缀的内部键名。状态对应的样式类名 SHALL 保持宿主原值，使文案与样式解耦。
+
+#### Scenario: 状态标签随语言呈现
+
+- **WHEN** 宿主返回 `state: "unauthorized"` 且当前语言为中文
+- **THEN** 账号条目的状态标签显示「未授权」，MUST NOT 显示英文枚举原词
+
+#### Scenario: 字典缺少新枚举值
+
+- **WHEN** 宿主返回一个字典中尚未收录的状态值
+- **THEN** 界面原样显示该值，MUST NOT 显示空白或 `value.` 前缀的内部键名
+
+### Requirement: 环境自检摘要必须点名缺失与降级项
+
+`/selfcheck` 返回 `ready:false` 时，工作台 SHALL 在摘要行列出缺失与降级条目的名称；全部就绪时 SHALL 明确表示全部正常。MUST NOT 只用「缺失」二字充当摘要。
+
+#### Scenario: 缺少 ffmpeg 且运行时目录降级
+
+- **WHEN** 自检结果包含 `status:"missing"` 的 `ffmpeg` 与 `status:"degraded"` 的「运行时目录」
+- **THEN** 摘要行显示「缺失：ffmpeg；降级：运行时目录」一类的点名文案
+
+#### Scenario: 全部就绪
+
+- **WHEN** 自检结果中所有条目均为 `ok`
+- **THEN** 摘要行显示「全部就绪」一类的明确结论

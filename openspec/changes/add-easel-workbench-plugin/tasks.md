@@ -87,11 +87,20 @@
 - [x] 10.5 以物化方式重装（`pnpm pack` → 安装 `.tgz`，或改用 git 规格），重载 DSH 后确认 `GET /easel-workbench/api/config` 返回 200 且面板各子页无 404，验证方式：`curl` 断言 200 + JSON，浏览器逐子页走查；本项需重载运行中的进程，列用户验收；**实测结论**：用户重启 3080 实例后 `curl /easel-workbench/api/config`、`/overview`、`/selfcheck`、`/topics` 全部 200 + JSON（`easelRoot=…/_repo`），面板十个子页不再报 404；当前仍是源码树 `link:` 安装，物化重装见「待用户验收」
 - [x] 10.6 回写 `dsh-plugins/README.md` §1/§3：补「物化安装为受支持方式」「源码树 `link:` 须自带 `node_modules`」「profile 供应链策略 `minimumReleaseAge` 可能阻断安装」「安装后必须重载进程」「激活验收判据 = 宿主接口 200」五条，验证方式：照文档从零复现一次安装并得到 200；**实测结论**：README §1/§3 之外补了 §2 的 `~/.local/bin` 候选与来源标记、§4 的「让已安装副本复用一份现成的运行时」、§8 的三行排查项与 §10 的 `check-install.mjs` 用法表
 
+## 11. 界面文案（实际使用反馈）
+
+用户在环境自检页反馈：状态标签直出英文 `ok` / `missing`，且 `ready:false` 时摘要行只有「缺失」两个字——它会被读成区块标题，让满屏正常条目看起来也像故障（详见 `design.md` 的 D16）：
+
+- [x] 11.1 状态枚举本地化：客户端统一走 `valueLabel(t, value)`，账号（总览与账号页）、内容库选题、排期、选题、环境自检的状态标签与 meta 行不再直出英文枚举；字典缺词条时回落显示原值，`easel-state-*` 类名仍用宿主原值。验证方式：`node --test test/client.test.mjs` 的「宿主枚举值按字典本地化，字典缺词条时回落原值而不是空白」用例
+- [x] 11.2 环境自检摘要点名缺失与降级项：`ready:false` 时显示「缺失：X、Y；降级：Z」，全部就绪时显示「全部就绪」。验证方式：`node --test test/client.test.mjs` 的「环境自检的摘要行点名缺失与降级项，状态标签本地化」用例（同时断言三种状态标签文案）
+- [x] 11.3 自检两条文案去重与易读性：上游只读态改为「`skills` 始终只读；本次运行没有发生越界写入。」（原「已拒绝对 skills 的写入」连读易被误读），技能目录长度改为「技能目录中每条描述最多 N 个字符，超出部分会被截断。」（原句重复了 500 两次）。验证方式：`node --test test/selfcheck.test.mjs` 通过
+
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **277 项全绿**（`fail 0`；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **294 项全绿**（`fail 0`；
+  早期记录为 277 项，§10/§11 的用例陆续补入后为 294）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -133,6 +142,15 @@
   （`easelRoot=/data/dsh/home/dsh-hub/Easel/_repo`）；`probeRuntime` 真实配置下 `python.ok=true`（`user-bin`）、
   `ffmpeg` 仍 `not-found`（本机没装，属如实降级）。已把开发副本的 `.runtime` 通过 profile 补丁层
   `/data/dsh/profiles/web/cordis.patch.yml` 定向覆盖给已安装副本（`dsh --profile web --dump-config` 已确认合成结果）。
+- **界面文案本地化（2026-10-09，第 14 项实现期改进，对应用户在环境自检页的反馈与 design D16）**：用户重启后截图显示
+  Python 一项已变 ok、运行时目录 ok，但——状态标签直出英文 `ok` / `missing`，且 `ready:false` 时摘要行只有「缺失」
+  两个字（会被读成区块标题，让满屏正常条目也像故障）。改动：① 字典补 `value.*`（24 个枚举）与
+  `selfcheck.summary{Ok,Missing,Degraded}`、`common.listSeparator`/`clauseSeparator` 共 28 个词条（zh/en 各 88 条对齐）；
+  ② `src/client.js` 新增 `valueLabel(t, value)`（缺词条回落原值），账号（总览与账号页）、内容库、排期、选题、自检
+  的标签与 meta 行全部改走它，`easel-state-*` 类名仍用宿主原值；③ 自检摘要改为「缺失：ffmpeg；降级：运行时目录」
+  /「全部就绪」；④ `describeAccepts` 把 `image`/`video` 等素材类型也本地化；⑤ 自检两条文案去重
+  （上游只读、技能目录长度）。实测：`node --test test/*.test.mjs` → **294 项全绿**（新增 2 个客户端用例）；
+  `node scripts/build-client.mjs` → `lib/client.js` 58179 字节；`openspec validate … --strict` 通过。
 - **安装与激活实测（2026-10-09，第 12 项实现期缺陷，属打包契约而非接口逻辑）**：按用户报障（面板 10 个子页
   全部 `HTTP 404`）定位到——现象：`curl http://127.0.0.1:3080/easel-workbench/api/config` → `404`、`0B`
   （DSH 默认 404、无响应体，与插件自身 `lib/host/web.js:361` 的 JSON 404 可区分）；
@@ -167,6 +185,9 @@
   2026-10-09 实测：**安装本身成功**（`dsh.profile.bundles` 含 `easel-workbench`、`node_modules/easel-workbench`
   符号链接就位），失败发生在激活阶段——见 §10 与 `design.md` 的 D11–D14、安装与激活实测记录。
 - **2.4**：中文界面、英文界面、折叠态三张截图。
+- **11.1–11.3（需重启后目视确认）**：界面文案本地化与自检摘要的改动已由 `test/client.test.mjs` 与
+  `test/selfcheck.test.mjs` 覆盖，但**只有在重启 DSH 以加载新宿主/客户端代码后**才能在浏览器里看到：
+  状态标签应显示「正常／缺失／降级／已授权／未授权」等中文，自检摘要应显示「缺失：ffmpeg」而不是只写「缺失」。
 - **7.2**：在 DSH 排期界面暂停/删除工作台条目后，工作台视图同步显示为已暂停/已消失。
 - **8.1 / 8.3**：删除 `_repo/easel/`、`_repo/openclaw/`、`setup.sh`、`setup.ps1` 与 `web/app.py` 的三组
   路由，以及替换 20 个 OpenClaw 集成测试——8.1 的前置条件是「新路径全部验收通过」，即上面这些真机验收；

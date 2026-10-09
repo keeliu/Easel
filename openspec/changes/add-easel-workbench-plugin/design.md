@@ -129,6 +129,12 @@ pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真�
 
 `runtimeDir` 与包根绑定（`<插件包根>/.runtime`）是把运行时放在检出之外的正确默认，但 `link:` 安装会让「包根」指向链接目标，于是开发副本里的 venv 对已安装副本不可见。这不是缺陷而是配置点：用 profile 补丁层的 id 定向覆盖把 `runtimeDir` 指到已有运行时即可（README 第 4 节给了可复制的写法），插件 MUST NOT 自行在副本之间猜测或搬运运行时。
 
+### D16：界面只呈现本地化文案，宿主枚举值只用于样式与回落
+
+宿主返回的状态是稳定英文枚举（`ok` / `missing` / `degraded` / `authorized` / `unauthorized` / `scheduled`…），它们是**数据**；界面是**呈现**。用户在环境自检页实际反馈了两点：状态标签直出英文 `ok` / `missing`；`ready:false` 时摘要行只有「缺失」两个字——后者会被读成区块标题，把满屏正常条目一起判成故障。
+
+因此客户端统一走 `valueLabel(t, value)`：先查 `value.<枚举>` 词条，字典缺词条则**原样回落**（宿主新增枚举值时界面宁可显示原词，也不能显示 `value.xxx` 这类内部键名或空白）；而 `easel-state-*` 样式类名继续用宿主原值，使文案与样式解耦。自检摘要行改为**点名**：「缺失：ffmpeg；降级：运行时目录」，全部就绪时明确写「全部就绪」。同理，宿主给的中文诊断句要避免「拒绝/对」这类相邻同音字连读造成的误读。
+
 ### 安装与激活实测记录（2026-10-09）
 
 - **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。

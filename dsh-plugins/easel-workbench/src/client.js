@@ -144,6 +144,18 @@ window.__ModuleLoader__.load({
         .join(" · ");
     }
 
+    /**
+     * 宿主返回的是稳定的英文枚举（`missing` / `unauthorized` / `scheduled`…），界面上
+     * 必须翻成当前语言。字典里没有对应词条时**原样返回**——宿主新增枚举值时，界面
+     * 宁可显示原词，也不能显示 `value.xxx` 这样的内部键名或空白。
+     */
+    function valueLabel(t, value) {
+      if (value === undefined || value === null || value === "") return "";
+      var key = "value." + String(value);
+      var text = t(key);
+      return text === key ? String(value) : text;
+    }
+
     /** 语言切换时让 React 重画；取词函数自己会读到新语言，缺的只是一个通知。 */
     function createNotifier() {
       var version = 0;
@@ -372,9 +384,9 @@ window.__ModuleLoader__.load({
               "div",
               { className: "easel-row-main" },
               h("span", { className: "easel-row-title" }, String(account.label || account.platform)),
-              h("span", { className: "easel-muted" }, String(account.state)),
+              h("span", { className: "easel-muted" }, valueLabel(t, account.state)),
             ),
-            h("span", { className: "easel-tag easel-state-" + String(account.state) }, String(account.state)),
+            h("span", { className: "easel-tag easel-state-" + String(account.state) }, valueLabel(t, account.state)),
           );
         }),
       );
@@ -441,12 +453,12 @@ window.__ModuleLoader__.load({
                 "div",
                 { className: "easel-row-main" },
                 h("span", { className: "easel-row-title" }, String(account.label || account.platform)),
-                h("span", { className: "easel-muted" }, joinMeta([account.state, account.message])),
+                h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, account.state), account.message])),
                 action.platform === account.platform && action.status !== "idle" && action.status !== "running"
                   ? h("span", { className: "easel-muted", "data-easel-action": action.status }, action.message)
                   : null,
               ),
-              h("span", { className: "easel-tag easel-state-" + String(account.state) }, String(account.state)),
+              h("span", { className: "easel-tag easel-state-" + String(account.state) }, valueLabel(t, account.state)),
               h(
                 "button",
                 {
@@ -583,7 +595,7 @@ window.__ModuleLoader__.load({
                     },
                   },
                   h("span", { className: "easel-row-title" }, String(project.title || project.topic)),
-                  h("span", { className: "easel-muted" }, joinMeta([project.status, project.updated])),
+                  h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, project.status), project.updated])),
                 ),
               );
             }),
@@ -593,11 +605,11 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function describeAccepts(value) {
+    function describeAccepts(value, t) {
       if (!Array.isArray(value)) return "";
       return value
         .map(function (entry) {
-          if (typeof entry === "string") return entry;
+          if (typeof entry === "string") return valueLabel(t, entry);
           if (entry !== null && typeof entry === "object") return String(entry.label || entry.id || "");
           return "";
         })
@@ -619,7 +631,7 @@ window.__ModuleLoader__.load({
           { title: t("publish.platforms") },
           h(Resource, { state: platforms, t: t }, function (data) {
             var rows = (Array.isArray(data.platforms) ? data.platforms : []).map(function (platform) {
-              return [String(platform.label || platform.id), describeAccepts(platform.accepts)];
+              return [String(platform.label || platform.id), describeAccepts(platform.accepts, t)];
             });
             return rows.length === 0 ? h(EmptyState, { t: t }) : h(KeyValue, { t: t, rows: rows });
           }),
@@ -669,9 +681,9 @@ window.__ModuleLoader__.load({
                 "div",
                 { className: "easel-row-main" },
                 h("span", { className: "easel-row-title" }, String(item.topic || item.title || item.id || "")),
-                h("span", { className: "easel-muted" }, joinMeta([item.status, item.kind, item.scheduledAt])),
+                h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, item.status), valueLabel(t, item.kind), item.scheduledAt])),
               ),
-              h("span", { className: "easel-tag easel-state-" + String(item.status) }, String(item.status)),
+              h("span", { className: "easel-tag easel-state-" + String(item.status) }, valueLabel(t, item.status)),
               // 只有真的记下了 sessionId 的条目才给入口：点了没目标的按钮比没有按钮更糟。
               typeof item.sessionId === "string" && item.sessionId !== ""
                 ? h(
@@ -752,7 +764,7 @@ window.__ModuleLoader__.load({
                   "div",
                   { className: "easel-row-main" },
                   h("span", { className: "easel-row-title" }, String(topic.title)),
-                  h("span", { className: "easel-muted" }, joinMeta([topic.status, topic.source, topic.note])),
+                  h("span", { className: "easel-muted" }, joinMeta([valueLabel(t, topic.status), topic.source, topic.note])),
                 ),
               );
             }),
@@ -857,13 +869,34 @@ window.__ModuleLoader__.load({
       var state = useEndpoint(props.api, "/selfcheck");
       return h(Resource, { state: state, t: t }, function (data) {
         var entries = Array.isArray(data.entries) ? data.entries : [];
+        // 摘要行必须点名「缺什么」：只写「缺失」两个字会被读成区块标题，而列表里
+        // 明明还有一串正常条目，用户会以为整页都坏了（实际反馈过这一点）。
+        var labelOf = function (entry) {
+          return String(entry.label || entry.id || "");
+        };
+        var byStatus = function (status) {
+          return entries
+            .filter(function (entry) {
+              return entry.status === status;
+            })
+            .map(labelOf);
+        };
+        var missingNames = byStatus("missing");
+        var degradedNames = byStatus("degraded");
+        var summaryParts = [];
+        if (missingNames.length > 0) {
+          summaryParts.push(t("selfcheck.summaryMissing", { items: missingNames.join(t("common.listSeparator")) }));
+        }
+        if (degradedNames.length > 0) {
+          summaryParts.push(t("selfcheck.summaryDegraded", { items: degradedNames.join(t("common.listSeparator")) }));
+        }
         return h(
           "div",
           null,
           h(
             "p",
             { className: "easel-muted", "data-easel-selfcheck-ready": data.ready === true ? "true" : "false" },
-            data.ready === true ? t("selfcheck.ok") : t("selfcheck.missing"),
+            summaryParts.length > 0 ? summaryParts.join(t("common.clauseSeparator")) : t("selfcheck.summaryOk"),
           ),
           h(
             "ul",
@@ -880,7 +913,7 @@ window.__ModuleLoader__.load({
                   hasText(entry.detail) ? h("span", { className: "easel-muted" }, String(entry.detail)) : null,
                   hasText(entry.hint) ? h("span", { className: "easel-hint" }, String(entry.hint)) : null,
                 ),
-                h("span", { className: "easel-tag easel-state-" + String(entry.status) }, String(entry.status)),
+                h("span", { className: "easel-tag easel-state-" + String(entry.status) }, valueLabel(t, entry.status)),
               );
             }),
           ),

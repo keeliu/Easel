@@ -213,7 +213,7 @@ export function createSelfcheckService(deps) {
         blockedWrites,
         detail:
           blockedWrites.length === 0
-            ? `已拒绝对 ${UPSTREAM_READ_ONLY_PREFIXES.join("、")} 的写入，本次运行未发生越界写入。`
+            ? `${UPSTREAM_READ_ONLY_PREFIXES.join("、")} 始终只读；本次运行没有发生越界写入。`
             : `本次运行已拦下 ${blockedWrites.length} 次越界写入：${blockedWrites
                 .map((entry) => `${entry.path}（${entry.operation}）`)
                 .join("、")}`,
@@ -228,7 +228,7 @@ export function createSelfcheckService(deps) {
         label: "技能目录长度限制",
         status: "ok",
         maxLength: runtime.catalogDescriptionMaxLength,
-        detail: `技能目录中每条描述最多 ${runtime.catalogDescriptionMaxLength} 个字符（DSH 默认 500）。`,
+        detail: `技能目录中每条描述最多 ${runtime.catalogDescriptionMaxLength} 个字符，超出部分会被截断。`,
         hint: null,
       });
 

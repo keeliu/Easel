@@ -523,3 +523,84 @@ test("lib/client.js 与 src/client.js + locale/*.json 保持一致", async () =>
   const { stdout } = await run(process.execPath, ["scripts/build-client.mjs", "--check"], { cwd: PACKAGE_ROOT });
   assert.match(stdout, /--check 通过/);
 });
+
+test("宿主枚举值按字典本地化，字典缺词条时回落原值而不是空白", async () => {
+  // 宿主给的是稳定的英文枚举（authorized / unauthorized…）。界面必须翻译，
+  // 但**不能**因为字典里暂时没有某个新枚举就把条目显示成空白。
+  const fetchImpl = async (url) => {
+    if (String(url).includes("/accounts")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          accounts: [
+            { platform: "bilibili", label: "哔哩哔哩", state: "authorized" },
+            { platform: "xiaohongshu", label: "小红书", state: "unauthorized" },
+            { platform: "brand-new", label: "新平台", state: "brand-new-state" },
+          ],
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="accounts"]'));
+  await flush();
+
+  const tags = [...view.container.querySelectorAll(".easel-tag")].map((node) => node.textContent);
+  assert.ok(tags.includes("已授权"), "authorized 应显示为已授权：" + tags.join(" / "));
+  assert.ok(tags.includes("未授权"), "unauthorized 应显示为未授权：" + tags.join(" / "));
+  assert.ok(tags.includes("brand-new-state"), "字典没有的枚举值必须原样显示：" + tags.join(" / "));
+  assert.doesNotMatch(view.container.textContent, /unauthorized/, "不该把英文枚举直出给用户");
+  // 高亮用的 CSS 类仍按宿主原值生成（样式与文案解耦）。
+  assert.ok(view.container.querySelector(".easel-state-authorized") !== null, "状态类名必须保留宿主原值");
+
+  await view.unmount();
+});
+
+test("环境自检的摘要行点名缺失与降级项，状态标签本地化", async () => {
+  const selfcheck = async (entries, ready) => {
+    const bundle = await loadBundle(async (url) => {
+      if (String(url).includes("/selfcheck")) {
+        return { status: 200, json: async () => ({ ok: true, ready, entries }) };
+      }
+      return { status: 200, json: async () => ({ ok: true }) };
+    });
+    const { ctx, state } = createContext();
+    bundle.exports.apply(ctx);
+    const view = await mount(React.createElement(panelOf(state)));
+    await click(view.container.querySelector('[data-easel-nav="selfcheck"]'));
+    await flush();
+    return { bundle, state, view };
+  };
+
+  const mixed = await selfcheck(
+    [
+      { id: "python", label: "Python 运行时", status: "ok", path: "/usr/bin/python3" },
+      { id: "ffmpeg", label: "ffmpeg", status: "missing", hint: "apt-get install -y ffmpeg" },
+      { id: "runtime-dir", label: "运行时目录", status: "degraded" },
+    ],
+    false,
+  );
+
+  const summary = mixed.view.container.querySelector("[data-easel-selfcheck-ready]");
+  assert.ok(summary !== null, "自检必须保留 ready 标记节点");
+  assert.equal(summary.getAttribute("data-easel-selfcheck-ready"), "false");
+  assert.equal(summary.textContent, "缺失：ffmpeg；降级：运行时目录", "摘要行必须点名缺什么，而不是只写「缺失」");
+  assert.deepEqual(
+    [...mixed.view.container.querySelectorAll(".easel-tag")].map((node) => node.textContent),
+    ["正常", "缺失", "降级"],
+    "状态标签必须本地化",
+  );
+  assert.match(mixed.view.container.textContent, /apt-get install -y ffmpeg/, "hint 必须照常渲染");
+  await mixed.view.unmount();
+
+  const allOk = await selfcheck([{ id: "python", label: "Python 运行时", status: "ok" }], true);
+  assert.equal(allOk.view.container.querySelector("[data-easel-selfcheck-ready]").textContent, "全部就绪");
+  await allOk.view.unmount();
+});
