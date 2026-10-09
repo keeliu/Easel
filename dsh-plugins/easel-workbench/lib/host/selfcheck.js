@@ -71,6 +71,11 @@ export function createSelfcheckService(deps) {
         runtime.packageRoot === undefined ? "scripts/bootstrap-runtime.sh" : join(runtime.packageRoot, "scripts/bootstrap-runtime.sh")
       }`;
 
+      // 非 root 时 apt-get 一定失败，hint 里直接把 sudo 写进去；同时也得给一条**不需要
+      // 包管理器权限**的出路，否则容器里的非特权用户只能读到一条自己做不到的建议。
+      const needsSuperUser = typeof process.getuid === "function" && process.getuid() !== 0;
+      const installFfmpeg = `${needsSuperUser ? "sudo " : ""}apt-get install -y ffmpeg`;
+
       for (const [id, label, found] of [
         ["python", "Python 运行时", probed.python],
         ["ffmpeg", "ffmpeg", probed.ffmpeg],
@@ -95,7 +100,7 @@ export function createSelfcheckService(deps) {
             ? null
             : id === "python"
               ? `任选其一：① 在插件配置里指定 pythonExecutable；② 运行 ${bootstrap} --groups core 建立受控运行时；③ 把解释器放进 PATH 或 ~/.local/bin（这两处插件都会自动查找）。`
-              : `ffmpeg 只能由系统提供，插件不自动安装：Debian/Ubuntu 用 apt-get install -y ffmpeg，macOS 用 brew install ffmpeg；缺它只影响视频与音频合成，其余区域照常可用。`,
+              : `ffmpeg 只能由系统提供，插件不自动安装：Debian/Ubuntu 用 ${installFfmpeg}，macOS 用 brew install ffmpeg；没有包管理器权限时，可把静态构建放到 ~/.local/bin/ffmpeg（插件会自动查找），或在插件配置里指定 ffmpegExecutable。缺它只影响视频与音频合成，其余区域照常可用。`,
         });
       }
 

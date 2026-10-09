@@ -149,7 +149,9 @@
   ② `src/client.js` 新增 `valueLabel(t, value)`（缺词条回落原值），账号（总览与账号页）、内容库、排期、选题、自检
   的标签与 meta 行全部改走它，`easel-state-*` 类名仍用宿主原值；③ 自检摘要改为「缺失：ffmpeg；降级：运行时目录」
   /「全部就绪」；④ `describeAccepts` 把 `image`/`video` 等素材类型也本地化；⑤ 自检两条文案去重
-  （上游只读、技能目录长度）。实测：`node --test test/*.test.mjs` → **294 项全绿**（新增 2 个客户端用例）；
+  （上游只读、技能目录长度）。另：非 root 环境下 ffmpeg 的 `hint` 改为 `sudo apt-get install -y ffmpeg`，
+  并补一条不需要包管理器权限的出路（静态构建放 `~/.local/bin/ffmpeg` 或配置 `ffmpegExecutable`），
+  对应 `test/selfcheck.test.mjs` 新增的两条断言（`process.getuid()` 判定，root 下不要求 `sudo`）。实测：`node --test test/*.test.mjs` → **294 项全绿**（新增 2 个客户端用例）；
   `node scripts/build-client.mjs` → `lib/client.js` 58179 字节；`openspec validate … --strict` 通过。
 - **安装与激活实测（2026-10-09，第 12 项实现期缺陷，属打包契约而非接口逻辑）**：按用户报障（面板 10 个子页
   全部 `HTTP 404`）定位到——现象：`curl http://127.0.0.1:3080/easel-workbench/api/config` → `404`、`0B`

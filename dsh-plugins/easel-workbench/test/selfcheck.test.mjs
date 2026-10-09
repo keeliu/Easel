@@ -101,8 +101,14 @@ describe("自检条目的可操作性", () => {
 
     const ffmpeg = byId.get("ffmpeg");
     assert.equal(ffmpeg.status, "missing");
-    assert.match(ffmpeg.hint, /apt-get install -y ffmpeg/);
+    assert.match(ffmpeg.hint, /(sudo )?apt-get install -y ffmpeg/);
     assert.match(ffmpeg.hint, /brew install ffmpeg/);
+    // 非 root 环境必须同时给一条不需要包管理器权限的出路（实测本机跑在容器里、非 root）。
+    assert.match(ffmpeg.hint, /\.local\/bin\/ffmpeg/);
+    assert.match(ffmpeg.hint, /ffmpegExecutable/);
+    if (typeof process.getuid === "function" && process.getuid() !== 0) {
+      assert.match(ffmpeg.hint, /sudo apt-get install -y ffmpeg/);
+    }
   });
 
   it("契约：非 ok 必带非空 hint，ok 必不带 hint", async () => {

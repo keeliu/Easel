@@ -127,6 +127,8 @@ pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真�
 
 与此配套的自检契约：每一条非 `ok` 条目 SHALL 带 `hint`——**具体的下一步**（要运行的命令或要改的配置键），而不是只报告「未找到」；`ok` 条目 MUST NOT 带 `hint`，避免面板堆无意义提示。`hint` 里出现的脚本路径用 `packageRoot` 展开成绝对路径，不能是占位符（用户要能直接复制粘贴）。
 
+「可执行」还包括**用户真的有权执行**：实测本机容器内进程非 root，`apt-get install -y ffmpeg` 必然失败。因此非 root 环境下 ffmpeg 的 `hint` 直接写成 `sudo apt-get install -y ffmpeg`，并同时给一条不需要包管理器权限的出路——把静态构建放进 `~/.local/bin/ffmpeg`（探测已覆盖该目录）或在配置里指定 `ffmpegExecutable`。判定用 `process.getuid() !== 0`，不猜、不硬编码。
+
 `runtimeDir` 与包根绑定（`<插件包根>/.runtime`）是把运行时放在检出之外的正确默认，但 `link:` 安装会让「包根」指向链接目标，于是开发副本里的 venv 对已安装副本不可见。这不是缺陷而是配置点：用 profile 补丁层的 id 定向覆盖把 `runtimeDir` 指到已有运行时即可（README 第 4 节给了可复制的写法），插件 MUST NOT 自行在副本之间猜测或搬运运行时。
 
 ### D16：界面只呈现本地化文案，宿主枚举值只用于样式与回落
