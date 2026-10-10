@@ -3,11 +3,11 @@
 ## 1. 阶段 0：运行时与技能可见性
 
 > **2026-10 目录改名**：为满足 dsh-market 的收录规则（CI 只从根包或 `packages/`·`plugins/`·`apps/` 子包读 `dsh.bundle`），
-> 仓库内的 `dsh-plugins/` 已 `git mv` 为 `plugins/`。本文档中形如 `plugins/easel-workbench/…` 的**仓库路径**按新名读；
+> 仓库内的 `dsh-plugins/` 已 `git mv` 为 `plugins/`。本文档中形如 `plugins/dsh-easel/…` 的**仓库路径**按新名读；
 > 而指开发工作区 `/data/dsh/home/dsh-hub/Easel/dsh-plugins/` 的字样（以及 `## 实现期记录` 里逐字引用的历史路径）保持不变，
 > 它们是当时的事实记录。
 
-- [ ] 1.1 编写受控 Python 运行时与 `ffmpeg` 的一次性引导脚本 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（**随包发布**，位置无关：随包/开发态两种布局都能定位包根与 Easel 检出），脚本只做显式安装（建 venv、按技能分组安装 `_repo/pyproject.toml` 的最小依赖集、提示 `ffmpeg` 的安装命令），验证方式：在干净环境执行脚本后 `python3 -c "import fastapi"` 与 `ffmpeg -version` 均成功，且脚本重复执行不报错
+- [ ] 1.1 编写受控 Python 运行时与 `ffmpeg` 的一次性引导脚本 `dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh`（**随包发布**，位置无关：随包/开发态两种布局都能定位包根与 Easel 检出），脚本只做显式安装（建 venv、按技能分组安装 `_repo/pyproject.toml` 的最小依赖集、提示 `ffmpeg` 的安装命令），验证方式：在干净环境执行脚本后 `python3 -c "import fastapi"` 与 `ffmpeg -version` 均成功，且脚本重复执行不报错
 - [x] 1.2 在文档 `dsh-plugins/README.md` 中记录运行时的期望路径、依赖分组与失败排查步骤，验证方式：按文档从零复现一次引导流程，全部命令可直接复制执行且结果与文档描述一致
 - [x] 1.3 启用并配置 `dsh-skill-filesystem`，把 `_repo/skills/openclaw/` 写入 `customSkillDirs`，验证方式：新增一个使用该技能根的会话，技能目录中出现 Easel 技能名称，且原 DSH 技能仍可见
 - [x] 1.4 验证 Easel 技能的 DSH 兼容性：对 114 个 `SKILL.md` 跑一次 frontmatter 检查，确认 `name` 为 kebab-case、`description` 非空且不超上限，验证方式：检查脚本输出为 0 个非法技能；并新建一个只看 `_repo/skills/openclaw/` 的会话确认目录无条目被丢弃
@@ -15,9 +15,9 @@
 
 ## 2. bundle 骨架与侧边栏入口
 
-- [ ] 2.1 创建 `dsh-plugins/easel-workbench/` 包骨架：`package.json`（含 `type: module`、`main`/`exports` 指向 `lib/index.js`、`dsh.bundle.patch`、`dsh.client`、顶层 `icon`）、`cordis.patch.yml`、宿主入口 `lib/index.js`、客户端源码 `src/client.js` 与构建产物 `lib/client.js`（由 `scripts/build-client.mjs` 生成，`--check` 幂等校验）、`locale/{zh-CN,en}.json`（构建期内联进客户端，运行时只注册内置 id `zh`/`en`）、`assets/`、随包 `scripts/bootstrap-runtime.sh`，验证方式：`plugin_manager` 的 `install_bundle` 指向该目录后安装成功，宿主与客户端入口均被加载且无报错（骨架与入口的静态契约已由 `test/index.test.mjs`、`test/plugin-hygiene.test.mjs` 覆盖，此处未勾选仅因 `install_bundle` 需用户批准后执行）
+- [ ] 2.1 创建 `dsh-plugins/dsh-easel/` 包骨架：`package.json`（含 `type: module`、`main`/`exports` 指向 `lib/index.js`、`dsh.bundle.patch`、`dsh.client`、顶层 `icon`）、`cordis.patch.yml`、宿主入口 `lib/index.js`、客户端源码 `src/client.js` 与构建产物 `lib/client.js`（由 `scripts/build-client.mjs` 生成，`--check` 幂等校验）、`locale/{zh-CN,en}.json`（构建期内联进客户端，运行时只注册内置 id `zh`/`en`）、`assets/`、随包 `scripts/bootstrap-runtime.sh`，验证方式：`plugin_manager` 的 `install_bundle` 指向该目录后安装成功，宿主与客户端入口均被加载且无报错（骨架与入口的静态契约已由 `test/index.test.mjs`、`test/plugin-hygiene.test.mjs` 覆盖，此处未勾选仅因 `install_bundle` 需用户批准后执行）
 - [x] 2.2 实现宿主侧最小 `apply(ctx, config)`：只注册一个空的 `easel` 服务与 `Config` schema（`pythonExecutable`、`ffmpegExecutable`、`profilesDir`、`outputsDir`、`skillDirs`、`catalogDescriptionMaxLength`、`taskDispatchTarget`），验证方式：单元测试断言缺省配置可加载、非法值被拒绝，并在 `Config.listConfigs` 中可见
-- [x] 2.3 实现客户端最小组件并在 `sidebar.panellist` 注册条目 `{ id: 'easel-workbench', label: <locale-aware> }`，同时在 `main` 注册相同 key 的面板组件，验证方式：侧边栏在「新会话」按钮下方出现「自媒体工作台」条目（英文界面为 "Creator Workbench"），折叠态下仍可见且有无障碍名称
+- [x] 2.3 实现客户端最小组件并在 `sidebar.panellist` 注册条目 `{ id: 'dsh-easel', label: <locale-aware> }`，同时在 `main` 注册相同 key 的面板组件，验证方式：侧边栏在「新会话」按钮下方出现「自媒体工作台」条目（英文界面为 "Creator Workbench"），折叠态下仍可见且有无障碍名称
 - [ ] 2.4 截图确认 2.3 的实际位置与折叠态表现，验证方式：产出中文界面、英文界面、折叠态三张截图，若位置不满足「新会话下方、会话列表上方」则记录并按 design 的退路调整锚点，调整后重新截图
 - [x] 2.5 验证入口选中后覆盖会话区域并能返回，验证方式：进入工作台后面板占据中栏、会话界面不再渲染；点击返回对话后恢复原会话，且输入草稿与滚动位置未变
 - [x] 2.6 为面板根部与子页面各加一层错误边界，验证方式：单元测试注入一个抛错的子页面，断言面板显示错误态且子导航与返回入口仍可操作（对应「面板故障隔离」场景）
@@ -87,9 +87,9 @@
 
 - [x] 10.1 把 `@deepseek-ai/schemastery`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/cordis` 从 `dependencies` 移到 `peerDependencies`（版本范围对齐 DSH 0.2.0-rc.2 与 schemastery `^3.18.4`），验证方式：断言 `package.json` 的 `dependencies` 无任何 `@deepseek-ai/*`，宿主包出现在 `peerDependencies`；**实测结论**：`dependencies` 已移除，`@deepseek-ai/dsh-llm` 与 `@deepseek-ai/schemastery` 同时在 `peerDependencies` 与 `devDependencies`，断言见 `test/plugin-hygiene.test.mjs` 的 10.2 用例
 - [x] 10.2 在 `test/plugin-hygiene.test.mjs` 增加打包契约防回归断言（宿主包不得出现在 `dependencies`、`dsh.client.inject` 只列客户端包、`files` 覆盖 `lib/client.js` 与 `scripts/bootstrap-runtime.sh`），验证方式：`node --test test/plugin-hygiene.test.mjs` 通过；**实测结论**：新增「打包契约」用例覆盖宿主包不得进 `dependencies`、`dsh.client.inject` 只列 `@deepseek-ai/dsh-client-*`、`files` 覆盖产物与引导脚本、`dsh.bundle.patch` 与 `private:true`
-- [x] 10.3 新增安装自检（`scripts/check-install.mjs` 或 README 中的等价命令）：在目标 profile 目录尝试 `import("easel-workbench")` 并请求 `GET <API_PREFIX>/config`，任一失败即非零退出，分别给出「源码树缺 `node_modules`」与「宿主半边未挂载，请重载进程」的指引，验证方式：对「源码树 `link:` 且无 `node_modules`」的已知失败态跑一次，得到非零退出与对应文案；**实测结论**：脚本落在 `scripts/check-install.mjs`（`--profile/--url/--import/--no-http/--json`），对真实 profile 五项全绿 exit 0；`test/check-install.test.mjs` 4 例覆盖「源码树 link: 缺依赖 → 非零退出 + pnpm install 指引」「未列进 bundles」「空响应体 404 → 重载 DSH」与通过态
+- [x] 10.3 新增安装自检（`scripts/check-install.mjs` 或 README 中的等价命令）：在目标 profile 目录尝试 `import("dsh-easel")` 并请求 `GET <API_PREFIX>/config`，任一失败即非零退出，分别给出「源码树缺 `node_modules`」与「宿主半边未挂载，请重载进程」的指引，验证方式：对「源码树 `link:` 且无 `node_modules`」的已知失败态跑一次，得到非零退出与对应文案；**实测结论**：脚本落在 `scripts/check-install.mjs`（`--profile/--url/--import/--no-http/--json`），对真实 profile 五项全绿 exit 0；`test/check-install.test.mjs` 4 例覆盖「源码树 link: 缺依赖 → 非零退出 + pnpm install 指引」「未列进 bundles」「空响应体 404 → 重载 DSH」与通过态
 - [x] 10.4 客户端在收到无响应体的 404 时显示「宿主服务未挂载，请重载 DSH」提示，验证方式：`test/client.test.mjs` 注入空体 404 断言提示与重试入口存在；注入插件 JSON 错误时保持按响应体 `message` 呈现；**实测结论**：`createApi(prefix, t)` 区分「404 且解析不出 JSON」与插件自己的 JSON 404，空体时显示 `error.hostNotMounted` 并保留重试入口，`test/client.test.mjs` 有对应用例
-- [x] 10.5 以物化方式重装（`pnpm pack` → 安装 `.tgz`，或改用 git 规格），重载 DSH 后确认 `GET /easel-workbench/api/config` 返回 200 且面板各子页无 404，验证方式：`curl` 断言 200 + JSON，浏览器逐子页走查；本项需重载运行中的进程，列用户验收；**实测结论**：用户重启 3080 实例后 `curl /easel-workbench/api/config`、`/overview`、`/selfcheck`、`/topics` 全部 200 + JSON（`easelRoot=…/_repo`），面板十个子页不再报 404；当前仍是源码树 `link:` 安装，物化重装见「待用户验收」
+- [x] 10.5 以物化方式重装（`pnpm pack` → 安装 `.tgz`，或改用 git 规格），重载 DSH 后确认 `GET /dsh-easel/api/config` 返回 200 且面板各子页无 404，验证方式：`curl` 断言 200 + JSON，浏览器逐子页走查；本项需重载运行中的进程，列用户验收；**实测结论**：用户重启 3080 实例后 `curl /dsh-easel/api/config`、`/overview`、`/selfcheck`、`/topics` 全部 200 + JSON（`easelRoot=…/_repo`），面板十个子页不再报 404；当前仍是源码树 `link:` 安装，物化重装见「待用户验收」
 - [x] 10.6 回写 `dsh-plugins/README.md` §1/§3：补「物化安装为受支持方式」「源码树 `link:` 须自带 `node_modules`」「profile 供应链策略 `minimumReleaseAge` 可能阻断安装」「安装后必须重载进程」「激活验收判据 = 宿主接口 200」五条，验证方式：照文档从零复现一次安装并得到 200；**实测结论**：README §1/§3 之外补了 §2 的 `~/.local/bin` 候选与来源标记、§4 的「让已安装副本复用一份现成的运行时」、§8 的三行排查项与 §10 的 `check-install.mjs` 用法表
 
 ## 11. 界面文案（实际使用反馈）
@@ -108,7 +108,7 @@
 - [x] 12.2 选题派发成会话里的任务：选题行加「派发」，表单收期望产物（必填）、目标画像、目标平台、补充说明与投递目标（新会话 / 既有会话），`POST /dispatch`；缺期望产物时本地拦下不发请求；成功后显示会话标识与走 `uiWorkspace.openSession` 的「打开会话」。验证方式：`node --test test/client.test.mjs` 的「选题能派发到会话」用例（断言请求体 `target`/`task.goal`/`task.deliverable`、既有会话可选、「打开会话」落到 `sessionOpens`）
 - [x] 12.3 画像可新建并逐维度维护：画像区域加「新建画像」（`POST /profiles`），维度改为可编辑（`PUT /profiles/:name/dimensions/:dimension`），成功后就地显示「已保存 <维度>（<字节数> 字节）」。验证方式：`node --test test/client.test.mjs` 的「画像可以新建，也能逐维度编辑并写回宿主」用例
 - [x] 12.4 账号验证的子进程延迟解析（真实缺陷）：`lib/index.js` 过去在 `apply()` 里给 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册晚于插件挂载，于是账号验证永久报 `runtime-missing`，自检却因为请求时解析而说能力正常。改为 `lazyService(ctx, "subprocess")`（`lib/host/services.js`）＋ `runCommand` 内解析（`lib/host/exec.js`），并让 `resolvePython` 与自检共用同一条候选链。验证方式：`node --test test/index.test.mjs` 的「宿主子进程服务晚于插件挂载就绪时，账号验证仍能执行（延迟解析）」用例（挂载后再注入服务，验证请求仍能起子进程）
-- [x] 12.5 按用户要求装好 ffmpeg：从 npm 取 `@ffmpeg-installer/linux-x64`（4.1.0）静态构建，落到 `/data/dsh/home/.local/bin/ffmpeg`（0755，探测链已覆盖该目录）。验证方式：`ffmpeg -version` 输出 `ffmpeg version N-47683-g0e8eb07980-static`（含 libx264/libx265/aac）；活实例 `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`（ffmpeg 解析到 `/data/dsh/home/.local/bin/ffmpeg`）
+- [x] 12.5 按用户要求装好 ffmpeg：从 npm 取 `@ffmpeg-installer/linux-x64`（4.1.0）静态构建，落到 `/data/dsh/home/.local/bin/ffmpeg`（0755，探测链已覆盖该目录）。验证方式：`ffmpeg -version` 输出 `ffmpeg version N-47683-g0e8eb07980-static`（含 libx264/libx265/aac）；活实例 `GET /dsh-easel/api/selfcheck` → `ready:true`、`missing:[]`（ffmpeg 解析到 `/data/dsh/home/.local/bin/ffmpeg`）
 
 ## 13. 扫码登录、发布与热点（实际使用反馈第三批）
 
@@ -121,7 +121,7 @@
 - [x] 13.5 热点来源可选并可沉淀为选题：热点区加来源多选（六个源），选择结果以 `?ids=` 传宿主（全选或全不选时省略参数）；每条线索可「存为选题」（`POST /topics`，来源标记为热点）并就地回报；抓取失败的来源照实呈现。验证方式：`node --test test/client.test.mjs` 的「热点：可选来源用 ?ids= 传给宿主，线索能存进选题库」用例；**实测结论**：通过
 - [x] 13.6 刷新不得重建子树（真实缺陷）：`useResource` 重取时保留上一份数据、`Resource` 只在没有数据时显示 Loading、画像与主题详情加 `key`。修前实测：登录成功后列表刷新 → 子树卸载重建 → 登录面板重挂又报成功 → 再刷新，6 秒内 `/login/status` 被请求 400+ 次、React 警告刷出 22 万行、测试进程跑死。验证方式：`node --test test/client.test.mjs` 3.0 秒跑完 18 项、日志里 0 条 act 警告；**实测结论**：通过（修复前同一条用例 20 秒超时）
 - [x] 13.7 发布与登录依赖自检（真实缺口）：该 venv 是用 `--groups core` 建的，而六个平台的登录脚本都 `import playwright`，于是「解释器 ok」并不等于「能扫码登录」——面板只会弹脚本原样的 `ModuleNotFoundError`。新增 `lib/host/runtime.js` 的 `probePythonPackages()`（用 `importlib.util.find_spec` 逐包查询，不真正 import）与 `lib/host/selfcheck.js` 的 `publish-deps` 条目：缺 `playwright` 报 `missing`，只缺 `biliup`/`requests`/`beautifulsoup4` 报 `degraded`（只影响 B 站上传与资讯类技能），没有解释器时指向 Python 那一条且不发注定失败的探测。验证方式：`node --test test/selfcheck.test.mjs`（9 例）与 `node --test test/runtime.test.mjs`（28 例）；**实测结论**：通过；本机用镜像补齐了 `playwright==1.60.0`（`~/.cache/ms-playwright` 里已有 `chromium-1223`，与 1.60.0 期望的可执行路径一致）、`requests`、`urllib3`、`beautifulsoup4`，`biliup` 在 sdist 元数据阶段挂死（`pip` 长时间停在 `Preparing metadata`）故保持 `degraded`
-- [x] 13.9 产物可直接预览 + 宿主未重载可自解释（真实反馈）：发布表单在选中产物后给出指向宿主 `GET /files?path=…`（不带 `download=1`）的链接，浏览器内联渲染文章/图片/视频；预检按钮文案改为「预检（不发布）」；`createApi` 把宿主答的路由级 404（`code:"not-found"` + 「未知接口」）认成 `host-stale`，保留原文并追加「重启 DSH 进程后重试」。验证方式：`node --test test/client.test.mjs` 的「发布：…」用例新增 `[data-easel-publish-open]` 断言（href 为 `/easel-workbench/api/files?path=outputs/秋季护肤/note.md`、`target=_blank`、预检结果里也有该入口）与新增用例「宿主还是旧版（未知接口 404）时，错误文案要给出「重启 DSH」这一步」；**实测结论**：客户端 21/21、全量 322/322 通过；活实例上 `GET /files?path=outputs/DSH插件/dsh-context-公众号排版.html` 实测 200 + `text/html` + 15557 字节（文章可直接渲染），而 `POST /accounts/xiaohongshu/login` 仍是 404——即该提示对应的是真实存在的宿主旧版状态
+- [x] 13.9 产物可直接预览 + 宿主未重载可自解释（真实反馈）：发布表单在选中产物后给出指向宿主 `GET /files?path=…`（不带 `download=1`）的链接，浏览器内联渲染文章/图片/视频；预检按钮文案改为「预检（不发布）」；`createApi` 把宿主答的路由级 404（`code:"not-found"` + 「未知接口」）认成 `host-stale`，保留原文并追加「重启 DSH 进程后重试」。验证方式：`node --test test/client.test.mjs` 的「发布：…」用例新增 `[data-easel-publish-open]` 断言（href 为 `/dsh-easel/api/files?path=outputs/秋季护肤/note.md`、`target=_blank`、预检结果里也有该入口）与新增用例「宿主还是旧版（未知接口 404）时，错误文案要给出「重启 DSH」这一步」；**实测结论**：客户端 21/21、全量 322/322 通过；活实例上 `GET /files?path=outputs/DSH插件/dsh-context-公众号排版.html` 实测 200 + `text/html` + 15557 字节（文章可直接渲染），而 `POST /accounts/xiaohongshu/login` 仍是 404——即该提示对应的是真实存在的宿主旧版状态
 - [x] 13.10 宿主重启说明（用户侧动作，非代码）：面板能自解释之后，仍需用户重启 DSH 进程才能让宿主半边生效；本条不产出代码，只把结论写进 `dsh-plugins/README.md` 与本 change 的验收清单。**实测结论**：DSH 主进程（pid 23）启动时刻早于本轮提交 37.7 分钟，页面刷新只换客户端
 - [x] 13.8 面板内登记与删除排期（真实缺口）：排期列表只认标题带 `Easel｜` 前缀的条目（`lib/host/schedule.js:isEaselSchedule`），而 DSH 自己的排期界面建出来的条目不带这个前缀——于是日历区**永远**不会有内容，空态指引里的「登记排期」也没有可点的地方。宿主 `POST /schedule`/`DELETE /schedule/:id` 早就在（`lib/host/web.js:339-340`），缺的仍是入口。日历区新增 `ScheduleForm`（主题、任务目标、期望产物三项必填 + 投递会话 + 每天/每周/只一次 + 时区，时区默认取浏览器 `Intl` 值、取不到才回落 `Asia/Shanghai`），列表行加删除按钮（只在条目带 `sessionId` 时渲染，宿主 `remove` 要求 `id` 与 `sessionId` 同时到位）。验证方式：`node --test test/client.test.mjs` 的「登记排期：必填项本地就拦下，定时字段按 DSH 的形状原样透传」（断言缺项时零请求、`daily`/`weekly`/`at` 三种形状的请求体、成功后刷新列表）与「排期条目可以删除，没有会话绑定的条目不显示删除按钮」；**实测结论**：20/20 通过（客户端），全量 321/321
 - [x] 13.11 免 root 补齐 Chromium 系统共享库，并把它接进子进程（真实缺陷）：本机 `ldd` playwright 下载的 chromium 得到 **24 个 `=> not found`**（首个 `libglib-2.0.so.0`），内核直接执行 `exitCode 127`，脚本把这一切折叠成「浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。」——**这句话无法行动**。上游只做 `playwright install chromium`（不装系统库），官方 `install-deps` 要 root。新增 `scripts/install-browser-deps.mjs`（零依赖 Node ESM）：缺失 soname → `SONAME_PACKAGES` 映射 Debian 包 → 拉镜像 `Packages.gz` 索引 → 递归 `Depends` 闭包 → 下载 `.deb` → `dpkg-deb -x` 解到 `<runtimeDir>/chromium-deps/root`，写出 `installed.json`／`env.sh`，**不改系统目录、不需要 root**；新增 `lib/host/browser-deps.js` 只产出 `LD_LIBRARY_PATH` 覆盖，`lib/host/exec.js` 把 `spec.env` 透传给 `subprocess.spawn`（`runCommand` 与 `startCommand` 两处），登录/`whoami`/账号数据/发布四条链路各注入一次；非 Linux 返回空对象。验证方式：`node --test test/browser-deps.test.mjs`（11 例：路径只认真实目录、原有 `LD_LIBRARY_PATH` 保留在后、内核定位优先级、真探测用退出码判定、缺库 127 不谎报成功、spawn 抛错被折叠、接线防回归）。**实测结论**：11/11 通过；真机跑一次安装解出 **82 个包**，带注入环境执行内核 `--version` → `Chromium 148.0.7778.96`
@@ -139,12 +139,12 @@
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **352 项全绿**（`fail 0`；
+- 全量测试：`cd dsh-plugins/dsh-easel && node --test test/*.test.mjs` → **352 项全绿**（`fail 0`；
   早期记录为 277 项，§10–§13 的用例陆续补入后为 337，§14 的内容日历再补入 15 项后为 352）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
-- 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
+- 引导脚本实跑：脚本随包位于 `dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
-  `cd dsh-plugins/easel-workbench && bash scripts/bootstrap-runtime.sh --python ~/.local/bin/python3.12 --easel-root ../../_repo --groups core`
+  `cd dsh-plugins/dsh-easel && bash scripts/bootstrap-runtime.sh --python ~/.local/bin/python3.12 --easel-root ../../_repo --groups core`
   → `exit 0`；`pip list` 11 个直接依赖逐个 `importlib.import_module` 成功（Python 3.12.15）；
   `--dry-run` → `exit 0` 且不创建 `--runtime-dir`（无 `--python` 时按设计先报 `找不到可用的 Python 3.10+`）；
   随包位置下 `--check --groups core` → `exit 0`（`import fastapi：ok`），而默认分组的 `--check` → `exit 4`
@@ -165,7 +165,7 @@
 - **8.4 的落地方式（有意偏离）**：迁移对照全部写在 `dsh-plugins/README.md` §9（旧 CLI/Web 入口逐条给出
   替代路径与保留不动清单）以及 §1/§2/§3/§6.4；`_repo/README.md` **有意不改**——8.5 要求 `_repo` 内不产生
   技能、画像、产物之外的文件改动，而工作区形态下 `dsh-plugins/` 本就是 `_repo` 之外的兄弟目录。
-- 6.2 证据：默认解析下 `repoRoot=/data/dsh/home/dsh-hub/Easel`、`loginStateDir=/data/dsh/easel-workbench/login`（`DSH_HOME=/data/dsh`）→ 登录态目录在仓库之外；`git -C _repo status --porcelain` 为空，即登录态不出现在版本控制输出中。
+- 6.2 证据：默认解析下 `repoRoot=/data/dsh/home/dsh-hub/Easel`、`loginStateDir=/data/dsh/dsh-easel/login`（`DSH_HOME=/data/dsh`）→ 登录态目录在仓库之外；`git -C _repo status --porcelain` 为空，即登录态不出现在版本控制输出中。
 - 8.5 证据：`git -C _repo remote -v` → `origin https://github.com/keeliu/Easel.git`；
   `git -C _repo status --porcelain` → 空；`HEAD` = `fb80ae6`（分支 `main`）。
 - 技能目录成本（9.5）：真实 `_repo/skills/openclaw` 的 114 个 `SKILL.md` 上，
@@ -194,12 +194,12 @@
   对应 `test/selfcheck.test.mjs` 新增的两条断言（`process.getuid()` 判定，root 下不要求 `sudo`）。实测：`node --test test/*.test.mjs` → **294 项全绿**（新增 2 个客户端用例）；
   `node scripts/build-client.mjs` → `lib/client.js` 58179 字节；`openspec validate … --strict` 通过。
 - **安装与激活实测（2026-10-09，第 12 项实现期缺陷，属打包契约而非接口逻辑）**：按用户报障（面板 10 个子页
-  全部 `HTTP 404`）定位到——现象：`curl http://127.0.0.1:3080/easel-workbench/api/config` → `404`、`0B`
+  全部 `HTTP 404`）定位到——现象：`curl http://127.0.0.1:3080/dsh-easel/api/config` → `404`、`0B`
   （DSH 默认 404、无响应体，与插件自身 `lib/host/web.js:361` 的 JSON 404 可区分）；
-  `plugin_manager action=set_bundle` → `1 entry did not activate / easel-workbench (easel-workbench): failed to import`。
-  根因：以源码树 `link:` 安装（`dependencies["easel-workbench"]="link:…/_repo/dsh-plugins/easel-workbench"`）时
+  `plugin_manager action=set_bundle` → `1 entry did not activate / dsh-easel (dsh-easel): failed to import`。
+  根因：以源码树 `link:` 安装（`dependencies["dsh-easel"]="link:…/_repo/dsh-plugins/dsh-easel"`）时
   pnpm 不为该目标装依赖，Node 又按链接目标的真实路径解析模块 →
-  `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench/lib/host/config.js`，
+  `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/dsh-easel/lib/host/config.js`，
   宿主半边 `apply` 未执行，`webServer.register` 从未注册。处置：宿主运行时包改 `peerDependencies`（与 profile 内
   `dsh-context`/`@michengai/dsh-automation`/`dsh-mcp-connector` 的 `dependencies:{}` 惯例一致，D11）；以物化安装为
   受支持方式、源码树 `link:` 只作开发态（D12）；安装后必须重载进程、以宿主接口 200 为验收判据（D13）；
@@ -220,7 +220,7 @@
   实测：`node --test test/*.test.mjs` → **298 项全绿**；`node --test test/client.test.mjs` → 15/15；
   `node scripts/build-client.mjs` → `lib/client.js` 79183 字节；`ffmpeg -version` 输出静态构建
   `N-47683-g0e8eb07980-static`（已放到 `/data/dsh/home/.local/bin/ffmpeg`），活实例
-  `GET /easel-workbench/api/selfcheck` → `ready:true`、`missing:[]`。
+  `GET /dsh-easel/api/selfcheck` → `ready:true`、`missing:[]`。
 - **扫码登录、发布与热点（2026-10-09，第 15 项实现期改进，对应用户「怎么绑定会话生成内容 / 画像怎么维护 /
   账号验证提示进程不可用」的第三批反馈，见 design D20–D23）**：先做覆盖度侦察，结论是「大半已实现、空壳
   只有两处」——**扫码登录宿主侧根本没有启动端点**（`lib/host/accounts.js:435-452` 的 `loginPlan()` 只回一条
@@ -312,7 +312,7 @@
   改动人设来源后新会话用新文本而已有会话不受影响（这些任务的实现与单元测试部分均已完成）。
 - **2.1**：`plugin_manager action=install_bundle target=<包绝对路径>` 需用户执行；包骨架与宿主/客户端
   入口契约已由 `test/index.test.mjs`、`test/client.test.mjs` 覆盖（含缺 `lib/client.js` 时的报错路径）。
-  2026-10-09 实测：**安装本身成功**（`dsh.profile.bundles` 含 `easel-workbench`、`node_modules/easel-workbench`
+  2026-10-09 实测：**安装本身成功**（`dsh.profile.bundles` 含 `dsh-easel`、`node_modules/dsh-easel`
   符号链接就位），失败发生在激活阶段——见 §10 与 `design.md` 的 D11–D14、安装与激活实测记录。
 - **2.4**：中文界面、英文界面、折叠态三张截图。
 - **11.1–11.3（需重启后目视确认）**：界面文案本地化与自检摘要的改动已由 `test/client.test.mjs` 与
@@ -328,7 +328,7 @@
 - **8.1 / 8.3**：删除 `_repo/easel/`、`_repo/openclaw/`、`setup.sh`、`setup.ps1` 与 `web/app.py` 的三组
   路由，以及替换 20 个 OpenClaw 集成测试——8.1 的前置条件是「新路径全部验收通过」，即上面这些真机验收；
   在此之前 `_repo` 保持原样（8.5）。
-- **10.5（已验证）**：用户重启 3080 实例后 `GET /easel-workbench/api/config`、`/overview`、`/selfcheck`、
+- **10.5（已验证）**：用户重启 3080 实例后 `GET /dsh-easel/api/config`、`/overview`、`/selfcheck`、
   `/topics` 均 200 + JSON，面板十个子页不再出现 404——「宿主半边是否挂载」这一判据已达成。**仍开放的可选硬化项**：
   以物化方式（`pnpm pack` 生成的 `.tgz`）重装，摆脱源码树 `link:` 与开发副本共用目录的耦合。本机到 PyPI 不可达，
   且 `github:`/git 规格会被 pnpm 解析成 `git+ssh://`（本机 ssh 读不到 `/home/node/.ssh`，见 `design.md` 实测记录），

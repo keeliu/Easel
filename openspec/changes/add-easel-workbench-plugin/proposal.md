@@ -30,7 +30,7 @@ Easel 真正不可替代的资产是 114 个内容技能、约 50 个共享媒�
 - `creator-asset-library`: 创作者数据的读写——六维账号画像、内容库产物与素材附件，数据仍落在 Easel 既有的仓库目录结构中，且对上游仓库保持只读。
 - `creator-planning`: 创作计划与线索——排期复用 DSH 排期能力，选题库与热点线索作为可查的创作输入。
 - `platform-publishing`: 面向七个平台的账号、发布与归因——登录态可见并以用户重新授权方式获取凭据、经既有 Python 脚本执行发布、发布前强制通过确定性安全门禁且不提供绕过开关。
-- `workbench-bundle-packaging`: bundle 的打包与安装激活契约——宿主运行时包以 peer 依赖声明、安装必须物化为 profile 可解析的形式（源码树 `link:` 只作开发态且须自带 `node_modules`）、激活以宿主接口 `GET /easel-workbench/api/config` 返回 200 为验收判据。
+- `workbench-bundle-packaging`: bundle 的打包与安装激活契约——宿主运行时包以 peer 依赖声明、安装必须物化为 profile 可解析的形式（源码树 `link:` 只作开发态且须自带 `node_modules`）、激活以宿主接口 `GET /dsh-easel/api/config` 返回 200 为验收判据。
 
 ### Modified Capabilities
 

@@ -1,0 +1,13 @@
+# dsh-easel 插件行。
+#
+# 这一行只加载宿主半边（lib/index.js，一个普通的 Cordis 插件）；浏览器半边由
+# package.json 的 `dsh.client` 声明驱动，Web 应用会把 ./client 交给
+# `window.__ModuleLoader__` 加载。
+#
+# 这里刻意不写死仓库路径：宿主半边会按 repoRoot 配置 → 包自身真实路径向上查找
+# → 进程工作目录向上查找 的顺序自动定位 Easel 仓库（判据是同时存在 `_repo/`
+# 与 `dsh-plugins/` 的目录）。若自动定位失败，插件仍然加载，只在「环境自检」
+# 区域报告未配置，不会影响 profile 的其余部分。
+- insert:
+    - id: dsh-easel
+      name: dsh-easel

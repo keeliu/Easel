@@ -12,7 +12,7 @@ bundle 的 `package.json` SHALL 只用 `peerDependencies` 声明由 DSH 宿主�
 
 #### Scenario: 清单不把宿主包声明为 dependencies
 
-- **WHEN** 检查 `plugins/easel-workbench/package.json`
+- **WHEN** 检查 `plugins/dsh-easel/package.json`
 - **THEN** `dependencies` 中不存在任何 `@deepseek-ai/*` 条目，宿主包出现在 `peerDependencies` 且带版本范围
 
 #### Scenario: 客户端半边声明不受影响
@@ -26,7 +26,7 @@ bundle SHALL 以物化方式安装（打包 tarball、git 规格或 registry）�
 
 #### Scenario: 安装后可从 profile 导入插件入口
 
-- **WHEN** 在 profile 目录执行 `node --input-type=module -e 'await import("easel-workbench")'`
+- **WHEN** 在 profile 目录执行 `node --input-type=module -e 'await import("dsh-easel")'`
 - **THEN** 导入成功，且导出包含 `apply`、`inject`、`name`、`Config`
 
 #### Scenario: 依赖缺失在安装阶段即可发现
@@ -40,10 +40,10 @@ bundle SHALL 以物化方式安装（打包 tarball、git 规格或 registry）�
 
 #### Scenario: 激活成功后宿主接口可达
 
-- **WHEN** 重启 DSH 后请求 `GET /easel-workbench/api/config`
+- **WHEN** 重启 DSH 后请求 `GET /dsh-easel/api/config`
 - **THEN** 返回 200、`content-type: application/json`，响应体含配置字段
 
 #### Scenario: 宿主半边未激活时给出可判别的证据
 
-- **WHEN** 请求 `GET /easel-workbench/api/config` 得到 0 字节且无响应体的 404
+- **WHEN** 请求 `GET /dsh-easel/api/config` 得到 0 字节且无响应体的 404
 - **THEN** 该结果被判定为「宿主半边未挂载」，指引用户重载进程，而不是重试安装

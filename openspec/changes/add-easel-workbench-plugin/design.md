@@ -42,9 +42,9 @@
 
 - **备选**：宿主包 + 客户端包分离。否决理由：本次改造的两半没有独立生命周期，分离只增加发布协调成本。
 
-### D3：单一 `easel-workbench` 面板键 + 面板内子导航
+### D3：单一 `dsh-easel` 面板键 + 面板内子导航
 
-`sidebar.panellist` 只注册一个条目（`id: easel-workbench`），`main` 的同一 key 承载整个工作台；Easel 的 15 个页面收敛为面板内的 10 个功能区域，由面板内部子导航切换。
+`sidebar.panellist` 只注册一个条目（`id: dsh-easel`），`main` 的同一 key 承载整个工作台；Easel 的 15 个页面收敛为面板内的 10 个功能区域，由面板内部子导航切换。
 
 - **备选**：为每个页面注册一个 `main` key 与一个侧边栏条目。否决理由：`sidebar.panellist` 是「全局面板图标入口」，15 个图标会淹没侧边栏并挤占会话列表；且需求要求「单独一个入口」。
 - **备选**：用右栏（`openRightbar`）承载工作台。否决理由：需求明确要求「覆盖现有的会话框区域」，即中栏 `main`；右栏要让位于中栏空间。
@@ -105,21 +105,21 @@
 
 ### D12：bundle 以「物化安装」为受支持方式，源码树 `link:` 只作开发态
 
-pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真实路径**解析模块，因此当源码树位于 profile 之外时，它永远看不到 profile 的 `node_modules`。实测：以 `link:` 安装后，profile 解析到的是 `_repo/dsh-plugins/easel-workbench/lib/index.js`，其内部导入抛
-`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench/lib/host/config.js`。
+pnpm 不会为 `link:` 目标安装其依赖；Node 又按**链接目标的真实路径**解析模块，因此当源码树位于 profile 之外时，它永远看不到 profile 的 `node_modules`。实测：以 `link:` 安装后，profile 解析到的是 `_repo/dsh-plugins/dsh-easel/lib/index.js`，其内部导入抛
+`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/schemastery' imported from /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/dsh-easel/lib/host/config.js`。
 受支持的安装方式是**物化安装**（`pnpm pack` 后安装 `.tgz`／git 规格／registry），使插件落在 profile 的 `node_modules` 树内、peer 依赖沿树向上解析；若坚持源码树 `link:`，该源码树必须先自带 `node_modules`（本机即以 `pnpm install --config.minimumReleaseAge=0` 修复后才能导入）。
 
 - **备选**：把宿主包 vendor 进包内。否决理由：与 DSH 版本漂移，且违背「对模型、会话、技能零持有」的目标。
 
 ### D13：安装或依赖变化后必须重载进程，验收判据是宿主接口可达
 
-宿主半边导入失败时，cordis 中该条目没有 fiber（`@deepseek-ai/dsh-app-boot/lib/index.js:3904-3913` 把 `entry.fiber === undefined` 记为 `failed to import`），`ctx.webServer.register({kind:"prefix", path:"/easel-workbench/api"})` 因此从未执行。运行中的进程不会自行重试：实测 `touch` 补丁文件、入口与 `package.json` 后接口仍 404；`plugin_manager` 的 `set_bundle enabled=true` 返回 `changed:false` 并重复旧的 `failed to import`。故验收判据是「重启 DSH 后 `GET /easel-workbench/api/config` 返回 200 且响应体为 JSON」，而不是「侧边栏出现了入口」。
+宿主半边导入失败时，cordis 中该条目没有 fiber（`@deepseek-ai/dsh-app-boot/lib/index.js:3904-3913` 把 `entry.fiber === undefined` 记为 `failed to import`），`ctx.webServer.register({kind:"prefix", path:"/dsh-easel/api"})` 因此从未执行。运行中的进程不会自行重试：实测 `touch` 补丁文件、入口与 `package.json` 后接口仍 404；`plugin_manager` 的 `set_bundle enabled=true` 返回 `changed:false` 并重复旧的 `failed to import`。故验收判据是「重启 DSH 后 `GET /dsh-easel/api/config` 返回 200 且响应体为 JSON」，而不是「侧边栏出现了入口」。
 
 - **备选**：进程内热修复后验收。否决理由：DSH 没有重载失败条目的入口，等待不会自愈。
 
 ### D14：客户端在宿主半边缺失时给出可操作诊断
 
-宿主未挂载时，`/easel-workbench/api/*` 返回的是 DSH 的默认 404（0 字节、无响应体），与插件自身 404 的 `{"ok":false,"code":"not-found",…}` 可区分。客户端 SHALL 对「无响应体的 404」显示「宿主半边未挂载，请重启 DSH」一类的可操作提示，而不是裸的 `错误信息: HTTP 404`；对插件自身返回的错误仍按原有错误态呈现。
+宿主未挂载时，`/dsh-easel/api/*` 返回的是 DSH 的默认 404（0 字节、无响应体），与插件自身 404 的 `{"ok":false,"code":"not-found",…}` 可区分。客户端 SHALL 对「无响应体的 404」显示「宿主半边未挂载，请重启 DSH」一类的可操作提示，而不是裸的 `错误信息: HTTP 404`；对插件自身返回的错误仍按原有错误态呈现。
 
 ### D15：运行时探测必须覆盖用户态目录，缺失项必须自带下一步
 
@@ -155,7 +155,7 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
 
 ### D19：宿主服务必须延迟解析，不能在 apply 时取快照
 
-真机实测：`POST /easel-workbench/api/accounts/xiaohongshu/verify` 一直返回 `runtime-missing`「DSH 子进程服务不可用，无法执行外部命令」，而对同一实例 `GET /selfcheck` 却说 DSH 能力 ok——两处结论相反。根因是 `lib/index.js` 在 `apply()` 里就 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册**晚于**插件挂载，于是拿到 `undefined` 永久传下去；自检是请求时解析，所以看起来一切正常。
+真机实测：`POST /dsh-easel/api/accounts/xiaohongshu/verify` 一直返回 `runtime-missing`「DSH 子进程服务不可用，无法执行外部命令」，而对同一实例 `GET /selfcheck` 却说 DSH 能力 ok——两处结论相反。根因是 `lib/index.js` 在 `apply()` 里就 `serviceOf(ctx, "subprocess")` 取快照，而 DSH 的服务注册**晚于**插件挂载，于是拿到 `undefined` 永久传下去；自检是请求时解析，所以看起来一切正常。
 
 结论：服务当**能力**持有——`lazyService(ctx, name)` 返回取值函数，真正要用的时候才解析；并且自检与执行必须共用同一条解释器候选链，否则「自检说正常、一执行说不可用」这种自相矛盾还会再出现。
 
@@ -189,9 +189,9 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
 
 ### 安装与激活实测记录（2026-10-09）
 
-- **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ easel-workbench link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/easel-workbench`；`dsh.profile.bundles` 变为 20 项含 `easel-workbench`，`dependencies["easel-workbench"]="link:…"`。
+- **安装动作与结果**：`cd /data/dsh/profiles/web && npm_config_minimum_release_age=0 dsh plugin --profile web add /data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/dsh-easel --config.minimumReleaseAge=0 --reporter=append-only` → `exit 0`，`+ dsh-easel link:/data/dsh/home/dsh-hub/Easel/_repo/dsh-plugins/dsh-easel`；`dsh.profile.bundles` 变为 20 项含 `dsh-easel`，`dependencies["dsh-easel"]="link:…"`。
 - **环境阻断（与插件无关，但决定了安装路径）**：① profile 级 pnpm 供应链策略校验**整份 lockfile**（559 条），既有的 `billion-context@0.1.189` 落在 `minimumReleaseAge`（cutoff = now − 24h）内 → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，该 24 小时窗口内任何安装都失败（`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 未生效）；② `github:`/git 规格被 pnpm 解析为 `git+ssh://git@github.com/…`，而本机 ssh 读 `/home/node/.ssh`（不存在且父目录只读，`$HOME=/data/dsh/home` 被 ssh 忽略）→ `Host key verification failed`；③ 仓库约 323 MB，git 依赖会整仓克隆。
-- **失败表现**：客户端半边（面板与 10 个子导航）正常渲染，各子页显示 `错误信息: HTTP 404`；`curl http://127.0.0.1:3080/easel-workbench/api/config` → `HTTP 404`、`0B`（DSH 默认 404，而非插件 JSON 404）；`plugin_manager action=set_bundle` → `1 entry did not activate / easel-workbench (easel-workbench): failed to import`。
+- **失败表现**：客户端半边（面板与 10 个子导航）正常渲染，各子页显示 `错误信息: HTTP 404`；`curl http://127.0.0.1:3080/dsh-easel/api/config` → `HTTP 404`、`0B`（DSH 默认 404，而非插件 JSON 404）；`plugin_manager action=set_bundle` → `1 entry did not activate / dsh-easel (dsh-easel): failed to import`。
 
 ### D26：产物预览走宿主的 `/files` 内联返回，宿主未重载就把「重启」写进错误文案
 

@@ -10,7 +10,7 @@
 
 ```
 plugins/
-└── easel-workbench/          # 一个包，两半边
+└── dsh-easel/          # 一个包，两半边
     ├── lib/index.js          # 宿主半边（cordis 插件入口，package.json 的 main）
     ├── lib/client.js         # 客户端半边（构建产物，不要手改）
     ├── lib/host/             # 宿主服务：画像/内容库/选题/账号/发布/排期/派发/自检…
@@ -26,18 +26,18 @@ plugins/
 ```bash
 # 1) 装运行时（可选，但发布/守卫类技能需要）
 #    脚本随包发布在 <包根>/scripts/，从工作区根执行：
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh
-#    也可以先 cd 进包目录再跑：cd dsh-plugins/easel-workbench && bash scripts/bootstrap-runtime.sh
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh
+#    也可以先 cd 进包目录再跑：cd dsh-plugins/dsh-easel && bash scripts/bootstrap-runtime.sh
 
 # 2) 把本 bundle 装进 profile（在 DSH 会话里让 agent 执行，或走插件管理器）
-#    plugin_manager action=install_bundle target=/绝对路径/dsh-plugins/easel-workbench
+#    plugin_manager action=install_bundle target=/绝对路径/dsh-plugins/dsh-easel
 ```
 
 脚本的位置解析只看**脚本自身在哪里**：随包形态（`<包根>/scripts/`）下默认 venv 落在 `<包根>/.runtime`、
 Easel 检出取 `<工作区>/_repo`，与进程工作目录无关；开发态放在 `<工作区>/scripts/` 下也同样有效。
 
 安装后 `package.json` 的两半边分别由宿主与浏览器加载：`lib/index.js`（`main`）注册 `ctx.easel`
-服务与 `/easel-workbench/api` 前缀接口；`dsh.client.platform = "web"` 让浏览器加载 `lib/client.js`
+服务与 `/dsh-easel/api` 前缀接口；`dsh.client.platform = "web"` 让浏览器加载 `lib/client.js`
 （侧边栏「自媒体工作台」入口 + 中栏面板）。**`lib/client.js` 是构建产物**：缺失时宿主会报
 `MissingClientBundleError` 并提示先跑构建。
 
@@ -64,24 +64,24 @@ Easel 检出取 `<工作区>/_repo`，与进程工作目录无关；开发态放
 - Python 版本探测超时 10 秒；缺 Python 或 ffmpeg **不会**让插件挂载失败，只会让对应技能不可用，
   并且自检里每一条非 `ok` 的条目都会带一段 `hint`（告诉用户下一步该运行什么命令）。
 
-## 3. 引导脚本 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`
+## 3. 引导脚本 `dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh`
 
 只做显式安装：建 venv、按分组装依赖、自检、打印 ffmpeg 安装命令。**不装系统包、不用 sudo、
 不下载浏览器、不写 `_repo` 下受版本控制的文件**（venv 落在插件的 `.runtime/`）。
 
 ```bash
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh                      # 默认分组
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --groups core,easel  # 最小：够工作台与内容守卫跑起来
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --groups all         # 含 audio/video 重依赖
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --list-groups         # 只看分组与依赖
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --check               # 只自检，不安装
-bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --recreate            # 删掉重建 venv
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh                      # 默认分组
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --groups core,easel  # 最小：够工作台与内容守卫跑起来
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --groups all         # 含 audio/video 重依赖
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --list-groups         # 只看分组与依赖
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --check               # 只自检，不安装
+bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --recreate            # 删掉重建 venv
 ```
 
 | 选项 | 说明 |
 | --- | --- |
 | `--groups LIST` | 分组，逗号分隔；`all` 表示全部。默认 `core,easel,image,data,doc,publish` |
-| `--runtime-dir DIR` | venv 所在目录，默认 `<工作区>/dsh-plugins/easel-workbench/.runtime` |
+| `--runtime-dir DIR` | venv 所在目录，默认 `<工作区>/dsh-plugins/dsh-easel/.runtime` |
 | `--easel-root DIR` | Easel 检出目录，默认同目录下的 `_repo` |
 | `--python CMD` | 建 venv 用的系统解释器（默认按 `python3`、`python`、`python3.13`…`python3.10` 探测：稳定别名优先，其次带版本号的名字） |
 | `--index-url URL` | pip 索引（等价 `PIP_INDEX_URL`） |
@@ -109,7 +109,7 @@ bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --recreate        
 - **`--groups core` 不够扫码登录**：登录脚本要开浏览器，六个平台都 `import playwright`（只有 B 站登录是
   纯标准库）。工作台的环境自检为此单列「发布与登录依赖」一项：缺 `playwright` 报缺失，只缺 `biliup` 一类
   报降级（只影响 B 站上传与资讯类技能）。补装用
-  `bash dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh --groups core,publish`；本机实测
+  `bash dsh-plugins/dsh-easel/scripts/bootstrap-runtime.sh --groups core,publish`；本机实测
   `files.pythonhosted.org` 上 47.5 MB 的 playwright wheel 会卡死，给 pip 指定镜像即可
   （`PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`）。playwright 还需要浏览器内核，若
   `~/.cache/ms-playwright` 下已有匹配的 `chromium-*` 就无需再下（本机装 `playwright==1.60.0` 时期望
@@ -152,7 +152,7 @@ PyMuPDF、PyYAML、requests、urllib3、zhconv）；除 `easel` 组的可编辑�
   "ffmpegExecutable": "",     // 同上
   "runtimeDir": "",           // 留空 = <插件包根>/.runtime
   "taskDispatchTarget": "current-session",  // 或 "new-session"
-  "loginStateDir": "",        // 留空 = $DSH_HOME/easel-workbench/login
+  "loginStateDir": "",        // 留空 = $DSH_HOME/dsh-easel/login
   "personaSource": "",        // 留空 = 随包 assets/persona.md
   "rulesSource": "",          // 留空 = 随包 assets/rules.md
   "skillDirs": ["skills/openclaw"],
@@ -172,23 +172,23 @@ PyMuPDF、PyYAML、requests、urllib3、zhconv）；除 `easel` 组的可编辑�
 
 ### 让已安装副本复用一份现成的运行时
 
-用 `link:` 装进 profile 时，包根是链接目标（例如 `<工作区>/_repo/plugins/easel-workbench`），
-而你可能只在开发副本（`<工作区>/dsh-plugins/easel-workbench`）里跑过引导脚本。这时在 profile 的
+用 `link:` 装进 profile 时，包根是链接目标（例如 `<工作区>/_repo/plugins/dsh-easel`），
+而你可能只在开发副本（`<工作区>/dsh-plugins/dsh-easel`）里跑过引导脚本。这时在 profile 的
 `cordis.patch.yml` 里按 id 定向覆盖即可（补丁层在每个 bundle 层之后生效）：
 
 ```yaml
-- id: easel-workbench
+- id: dsh-easel
   config:
     # 绝对路径；指到已经建好的 venv 所在目录，避免在另一份副本里重下一遍
-    runtimeDir: /绝对路径/dsh-plugins/easel-workbench/.runtime
+    runtimeDir: /绝对路径/dsh-plugins/dsh-easel/.runtime
 ```
 
 改完必须重载/重启 DSH 才会重新读取配置（见第 8 节与 design D13）。
 
 ## 5. 登录态与仓库只读
 
-- **登录态必须在仓库之外**：`loginStateDir` 优先级为 显式配置 → `$DSH_HOME/easel-workbench/login` →
-  `~/.dsh/easel-workbench/login`，三者都不在检出内，因此 `git status` 永远是干净的。
+- **登录态必须在仓库之外**：`loginStateDir` 优先级为 显式配置 → `$DSH_HOME/dsh-easel/login` →
+  `~/.dsh/dsh-easel/login`，三者都不在检出内，因此 `git status` 永远是干净的。
 - **`skills/` 与 `skills/shared/scripts/` 只读**：任何写入请求都会被拒绝（错误码 `upstream-read-only`
   / `path-out-of-scope`），并记入审计（`paths.blockedWrites()` 只保留最近 100 条，含相对路径与操作类型）。
   这样 `_repo` 始终能直接 `git pull` 上游。
@@ -217,7 +217,7 @@ PyMuPDF、PyYAML、requests、urllib3、zhconv）；除 `easel` 组的可编辑�
 
 ### 6.2 工作台 HTTP 接口
 
-前缀 `/easel-workbench/api`，响应统一 `{ok:true, ...}`，错误 `{ok:false, code, message}`。
+前缀 `/dsh-easel/api`，响应统一 `{ok:true, ...}`，错误 `{ok:false, code, message}`。
 仅供本 bundle 的客户端半边使用（浏览器 `fetch`），**没有上传接口**（素材走 DSH 附件能力）。
 
 ```
@@ -309,7 +309,7 @@ roots”，且 `includeDefaultRoots`（`:33`）默认 `true` → **原 DSH 技�
 | 排期入口不可用（501） | 当前 DSH 运行环境没有排期服务；这是如实降级，不是错误 |
 | 派发报 `no-agent` | 「绑定既有会话」模式下该会话没有存活 agent，且 `agents.resume` 不可用 |
 
-诊断优先看两处：`GET /easel-workbench/api/selfcheck`（十项检查 + 能力探测）与宿主日志
+诊断优先看两处：`GET /dsh-easel/api/selfcheck`（十项检查 + 能力探测）与宿主日志
 （挂载时会打印数据根、工作区与接口前缀）。
 
 ## 9. 与旧入口的对照（迁移说明）
@@ -358,8 +358,8 @@ node scripts/check-install.mjs [--profile <profile 目录>] [--url <http://127.0
 | `profile` | profile 清单声明了本插件且列进 `dsh.profile.bundles`；否则按 README §1 重装 |
 | `包落地` | 从 profile 能解析到插件目录，`lib/index.js` 与 `lib/client.js` 都是非空文件；`lib/client.js` 缺失时先跑 `build-client.mjs` |
 | `裸导入` | `lib/**` 里每个裸模块说明符都能落地：`node:` 内置、`peerDependencies`（由 DSH 的 profile 解析拦截提供），或目标目录/profile 的 `node_modules` 里真实存在。**这一项就是「源码树 `link:` 缺 `node_modules`」的判据** |
-| `import`（可选 `--import`） | 在 profile 目录里真的 `import("easel-workbench")`；仅因宿主 peer 包缺失而失败时只作信息提示（普通 Node 进程看不到 DSH 的拦截层） |
-| `HTTP` | `GET <url>/easel-workbench/api/config` 必须 200 + JSON；**空响应体的 404 = 宿主半边未挂载，重载/重启 DSH**（design D13） |
+| `import`（可选 `--import`） | 在 profile 目录里真的 `import("dsh-easel")`；仅因宿主 peer 包缺失而失败时只作信息提示（普通 Node 进程看不到 DSH 的拦截层） |
+| `HTTP` | `GET <url>/dsh-easel/api/config` 必须 200 + JSON；**空响应体的 404 = 宿主半边未挂载，重载/重启 DSH**（design D13） |
 
 宿主半边（`lib/host/**`）是纯函数式服务，测试用假 `ctx` 注入；客户端测试跑在 jsdom 里并校验
 产物不含 iframe、不含 DSH 客户端包依赖、不含硬编码色值。需要可执行位的测试夹具建在
