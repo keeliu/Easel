@@ -54,7 +54,12 @@ if [ -f "$SCRIPT_DIR/../package.json" ] && [ -d "$SCRIPT_DIR/../lib" ]; then
 else
   # 开发态：<工作区>/scripts/bootstrap-runtime.sh
   WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-  PACKAGE_DIR="$WORKSPACE_ROOT/dsh-plugins/easel-workbench"
+  # 仓库形态下包在 plugins/easel-workbench；开发工作区形态下仍是 dsh-plugins/easel-workbench
+  PACKAGE_DIR=""
+  for candidate in "$WORKSPACE_ROOT/plugins/easel-workbench" "$WORKSPACE_ROOT/dsh-plugins/easel-workbench"; do
+    if [ -d "$candidate" ]; then PACKAGE_DIR="$candidate"; break; fi
+  done
+  [ -n "$PACKAGE_DIR" ] || PACKAGE_DIR="$WORKSPACE_ROOT/dsh-plugins/easel-workbench"
 fi
 
 RUNTIME_DIR="${EASEL_WORKBENCH_RUNTIME_DIR:-$PACKAGE_DIR/.runtime}"

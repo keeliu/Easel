@@ -2,6 +2,11 @@
 
 ## 1. 阶段 0：运行时与技能可见性
 
+> **2026-10 目录改名**：为满足 dsh-market 的收录规则（CI 只从根包或 `packages/`·`plugins/`·`apps/` 子包读 `dsh.bundle`），
+> 仓库内的 `dsh-plugins/` 已 `git mv` 为 `plugins/`。本文档中形如 `plugins/easel-workbench/…` 的**仓库路径**按新名读；
+> 而指开发工作区 `/data/dsh/home/dsh-hub/Easel/dsh-plugins/` 的字样（以及 `## 实现期记录` 里逐字引用的历史路径）保持不变，
+> 它们是当时的事实记录。
+
 - [ ] 1.1 编写受控 Python 运行时与 `ffmpeg` 的一次性引导脚本 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（**随包发布**，位置无关：随包/开发态两种布局都能定位包根与 Easel 检出），脚本只做显式安装（建 venv、按技能分组安装 `_repo/pyproject.toml` 的最小依赖集、提示 `ffmpeg` 的安装命令），验证方式：在干净环境执行脚本后 `python3 -c "import fastapi"` 与 `ffmpeg -version` 均成功，且脚本重复执行不报错
 - [x] 1.2 在文档 `dsh-plugins/README.md` 中记录运行时的期望路径、依赖分组与失败排查步骤，验证方式：按文档从零复现一次引导流程，全部命令可直接复制执行且结果与文档描述一致
 - [x] 1.3 启用并配置 `dsh-skill-filesystem`，把 `_repo/skills/openclaw/` 写入 `customSkillDirs`，验证方式：新增一个使用该技能根的会话，技能目录中出现 Easel 技能名称，且原 DSH 技能仍可见

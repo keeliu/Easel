@@ -4,8 +4,12 @@
 它**不修改 Easel 的技能、画像与产物**：`_repo/` 是上游检出，本 bundle 只读它、并通过 DSH 原生能力
 （会话、技能、排期、附件、模型选择）替代 Easel 原来的 CLI 与 Web 界面。
 
+> **目录名**：为了能被 [dsh-market](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 收录，仓库里这个目录
+> 叫 `plugins/`（上游 CI 只从根包或 `packages/`·`plugins/`·`apps/` 子包读 `package.json` 的 `dsh.bundle`）。
+> 开发工作区里它仍叫 `dsh-plugins/`——下文凡出现 `<工作区>/dsh-plugins/...` 的，指的都是开发工作区，不是本仓库路径。
+
 ```
-dsh-plugins/
+plugins/
 └── easel-workbench/          # 一个包，两半边
     ├── lib/index.js          # 宿主半边（cordis 插件入口，package.json 的 main）
     ├── lib/client.js         # 客户端半边（构建产物，不要手改）
@@ -168,7 +172,7 @@ PyMuPDF、PyYAML、requests、urllib3、zhconv）；除 `easel` 组的可编辑�
 
 ### 让已安装副本复用一份现成的运行时
 
-用 `link:` 装进 profile 时，包根是链接目标（例如 `<工作区>/_repo/dsh-plugins/easel-workbench`），
+用 `link:` 装进 profile 时，包根是链接目标（例如 `<工作区>/_repo/plugins/easel-workbench`），
 而你可能只在开发副本（`<工作区>/dsh-plugins/easel-workbench`）里跑过引导脚本。这时在 profile 的
 `cordis.patch.yml` 里按 id 定向覆盖即可（补丁层在每个 bundle 层之后生效）：
 

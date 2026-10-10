@@ -12,7 +12,7 @@ bundle 的 `package.json` SHALL 只用 `peerDependencies` 声明由 DSH 宿主�
 
 #### Scenario: 清单不把宿主包声明为 dependencies
 
-- **WHEN** 检查 `dsh-plugins/easel-workbench/package.json`
+- **WHEN** 检查 `plugins/easel-workbench/package.json`
 - **THEN** `dependencies` 中不存在任何 `@deepseek-ai/*` 条目，宿主包出现在 `peerDependencies` 且带版本范围
 
 #### Scenario: 客户端半边声明不受影响
