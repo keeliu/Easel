@@ -207,14 +207,24 @@
 - **WHEN** 用户在画像列表中选择另一个画像
 - **THEN** 详情视图重新挂载并只显示新画像的数据
 
-### Requirement: 选中产物必须能直接查看
+### Requirement: 选中产物必须能在表单右侧就地查看
 
-发布表单必须能直接打开当前选中的产物：以宿主 `GET /files?path=<相对路径>`（不带 `download=1`）的方式由浏览器内联渲染，MUST NOT 依赖 iframe，也 MUST NOT 把未经处理的 HTML 注入面板（面板与宿主同源，样式与脚本会互相串扰）。「预检」按钮的文案 SHALL 明确它不会发布。
+发布表单必须能在**不离开表单**的前提下查看当前选中的产物：选中文件后给出「在右侧预览」，点击后在表单右列就地展开预览分栏；MUST NOT 只提供开新标签页这一条路。预览 SHALL 走宿主 `GET /files?path=<相对路径>`（不带 `download=1`）。HTML 产物 SHALL 交给 `sandbox=""` 的 iframe——既禁脚本也不给同源访问，文章样式照常生效；其余产物按纯文本读回，超长时只显示前一段。MUST NOT 把文件内容直接注入面板（面板与宿主同源，样式与脚本会互相串扰）。内容取不回时 SHALL 在分栏内给出原因，并保留「在新标签页打开」作为退路。「预检」按钮的文案 SHALL 明确它不会发布。
 
-#### Scenario: 选中产物后打开它
+#### Scenario: 选中产物后右侧就地展开
 
-- **WHEN** 用户选好主题与文件
-- **THEN** 表单给出指向 `/files?path=outputs/<主题>/<文件>` 的链接，点击后在新窗口直接看到文章/图片/视频
+- **WHEN** 用户选好主题与文件并点击「在右侧预览」
+- **THEN** 表单容器进入分栏形态、右列出现 `[data-easel-publish-pane]`，同时仍保留指向 `/files?path=outputs/<主题>/<文件>` 的新标签页链接
+
+#### Scenario: HTML 产物不绕过沙箱
+
+- **WHEN** 选中的产物是 `.html`
+- **THEN** 预览区是 `sandbox=""`（既无 `allow-scripts` 也无 `allow-same-origin`）的 iframe，面板 DOM 里不存在被注入的产物内容
+
+#### Scenario: 内容取不回时给出退路
+
+- **WHEN** 文本产物取回失败，或当前环境没有可用的 `fetch`
+- **THEN** 分栏内显示失败原因，且「在新标签页打开」链接仍然可用
 
 #### Scenario: 预检不发布且文案不误导
 
@@ -229,3 +239,31 @@
 
 - **WHEN** 跑着的 DSH 进程仍是旧版宿主，用户点击「开始扫码登录」
 - **THEN** 面板同时显示宿主的「未知接口」原文与「请重启 DSH 进程后重试」的说明
+
+### Requirement: 日历区必须是一张按本地日期铺开的真实月历
+
+日历区 SHALL 渲染当前月的 6×7 网格（周一起始、固定 42 格），每格以**本地时区**的 `YYYY-MM-DD` 定位，MUST NOT 用 UTC 日期（东八区下月初一前后会整体错一天）。数据 SHALL 来自宿主 `GET /calendar?month=YYYY-MM`（该接口转调仓库既有的 `skills/shared/scripts/calendar_ops.py list --since --until`），并与既有 `GET /schedule` 的排期在渲染前合并落格：`kind === "event"` 的条目归「平台活动」，其余按宿主的 `status` 着色（不认识的值按已排期处理）。工具栏 SHALL 提供「全部／内容／活动」筛选与「‹ 上月／下月 ›／本月」翻月，MUST NOT 只靠滚动查看邻月。图例色点 MUST 只用 DSH 主题令牌，MUST NOT 出现硬编码色值。
+
+#### Scenario: 一个月就是 42 格
+
+- **WHEN** 用户切到日历区
+- **THEN** 网格里有 42 个 `[data-easel-calendar-day]`，表头是周一到周日，首格不晚于当月 1 号，请求带 `month=<当月>`
+
+#### Scenario: 条目按日期与类别落格
+
+- **WHEN** 宿主在同一天回了平台活动与一条状态为 `scheduled` 的内容
+- **THEN** 该格的条目分别带 `event` 与 `scheduled` 两种色点，平台名以徽标出现，超过 3 条时显示「还有 N 条」
+
+#### Scenario: 筛选与翻月都会改变网格
+
+- **WHEN** 用户点「活动」筛选或「下月 ›」
+- **THEN** 非活动条目从网格收起；翻月后月份标签与新的 `month=` 请求都指向邻月，「本月」能回到当月
+
+### Requirement: 日历取不回数据时必须就地说明原因
+
+日历数据取不回时（仓库里没有 `calendar_ops.py`、没有可用的解释器、脚本输出不是 JSON），日历区 SHALL 就地给出一句可行动的原因，MUST NOT 让整块区域空白，也 MUST NOT 把其余区域一起拖成错误态。
+
+#### Scenario: 脚本不在或输出不可解析
+
+- **WHEN** 宿主对 `GET /calendar` 回错误（缺脚本、缺解释器或输出不是 JSON）
+- **THEN** 日历区显示该原因，排期表单与已登记的排期照常可用

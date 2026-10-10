@@ -194,6 +194,7 @@ function relativeToMount(pathname) {
  *   accounts: Record<string, any>,
  *   publish: Record<string, any>,
  *   trends: Record<string, any>,
+ *   calendar: Record<string, any>,
  *   schedule: Record<string, any>,
  *   dispatch: Record<string, any>,
  *   selfcheck: Record<string, any>,
@@ -210,6 +211,7 @@ export function createWebService(deps) {
     accounts,
     publish,
     trends,
+    calendar,
     schedule,
     dispatch,
     selfcheck,
@@ -293,6 +295,12 @@ export function createWebService(deps) {
   router.get("/trends", async (request) => {
     const ids = typeof request.query.get === "function" ? request.query.get("ids") : null;
     return trends.read({ ids: ids ? ids.split(",").map((id) => id.trim()).filter(Boolean) : undefined });
+  });
+
+  // 内容日历：一个月一次读回「内容 + 平台活动」。`month` 缺省由宿主取当月的本地时区值。
+  router.get("/calendar", async (request) => {
+    const raw = typeof request.query.get === "function" ? request.query.get("month") : null;
+    return calendar.month(raw === null || raw === undefined || raw === "" ? undefined : raw);
   });
 
   // 包一层具名字段：接口统一回对象，不把数组直接摊进顶层（否则 {ok,...arr} 会变成 {"0":…}）。

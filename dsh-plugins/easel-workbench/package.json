@@ -1,6 +1,6 @@
 {
   "name": "easel-workbench",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "DSH bundle: the Creator Workbench panel for the Easel creator toolchain — reuses Easel's skills, Python scripts and data directories inside DeepSeek Harness.",
   "icon": "icon.svg",

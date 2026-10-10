@@ -88,6 +88,7 @@ function makeWeb(accountOverrides = {}) {
     publish: { listPlatforms: noop, history: noop, preview: noop, publish: noop },
     trends: { read: noop },
     schedule: { list: noop, create: noop, remove: noop },
+    calendar: { month: record("calendar.month", { month: "2026-08", from: "2026-07-27", to: "2026-09-06", count: 0, items: [] }) },
     dispatch: { dispatch: noop },
     selfcheck: { run: noop },
     persona: { read: noop },
@@ -170,5 +171,28 @@ describe("扫码登录路由", () => {
     assert.equal(payload.ok, false);
     assert.equal(payload.code, ERROR_CODES.INVALID_INPUT);
     assert.match(payload.message, /已经在运行/);
+  });
+});
+
+describe("内容日历路由", () => {
+  it("GET /calendar 把 month 原样交给服务；空串与缺省都表示「当月」", async () => {
+    const { web, calls } = makeWeb();
+
+    const explicit = await call(web, "GET", "/calendar?month=2026-08");
+    assert.equal(explicit.status, 200);
+    assert.equal(JSON.parse(explicit.text).ok, true);
+    assert.equal(JSON.parse(explicit.text).month, "2026-08");
+    assert.deepEqual(
+      calls.filter((item) => item.name === "calendar.month").map((item) => item.args[0]),
+      ["2026-08"],
+    );
+
+    await call(web, "GET", "/calendar");
+    await call(web, "GET", "/calendar?month=");
+    assert.deepEqual(
+      calls.filter((item) => item.name === "calendar.month").map((item) => item.args[0]),
+      ["2026-08", undefined, undefined],
+      "缺省与空串都必须让宿主自己决定当月，而不是把空字符串塞进去",
+    );
   });
 });

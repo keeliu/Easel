@@ -41,6 +41,24 @@ window.__ModuleLoader__.load({
       "analytics.successRate": "成功率",
       "boundary.detail": "错误信息：{message}",
       "boundary.title": "这个区域暂时不可用",
+      "calendar.filter.all": "全部",
+      "calendar.filter.content": "内容",
+      "calendar.filter.event": "活动",
+      "calendar.hint": "每天各平台发什么一目了然——发布自动落库，可记录排期与平台活动。",
+      "calendar.legendEvent": "平台活动",
+      "calendar.more": "还有 {count} 条",
+      "calendar.next": "下月 ›",
+      "calendar.prev": "‹ 上月",
+      "calendar.title": "内容日历",
+      "calendar.today": "本月",
+      "calendar.untitled": "（未命名）",
+      "calendar.weekday.0": "一",
+      "calendar.weekday.1": "二",
+      "calendar.weekday.2": "三",
+      "calendar.weekday.3": "四",
+      "calendar.weekday.4": "五",
+      "calendar.weekday.5": "六",
+      "calendar.weekday.6": "日",
       "common.cancel": "取消",
       "common.clauseSeparator": "；",
       "common.close": "关闭",
@@ -131,7 +149,8 @@ window.__ModuleLoader__.load({
       "publish.guardClear": "内容门禁通过。",
       "publish.history": "发布记录",
       "publish.mediaFile": "素材文件",
-      "publish.openFile": "预览选中的文件",
+      "publish.openFile": "在新标签页打开",
+      "publish.paneNoFetch": "当前环境无法在面板里取回文件内容，请改用「在新标签页打开」。",
       "publish.pickFileOption": "选择文件（可选）",
       "publish.pickPlatform": "请先选择平台。",
       "publish.pickPlatformOption": "选择平台",
@@ -145,6 +164,7 @@ window.__ModuleLoader__.load({
       "publish.title": "标题",
       "publish.titleRequired": "发布必须有标题。",
       "publish.topic": "内容主题",
+      "publish.viewInline": "在右侧预览",
       "schedule.create": "登记排期",
       "schedule.created": "已登记，列表中可见。",
       "schedule.createdAt": "已登记，首次触发时间：{at}",
@@ -239,6 +259,24 @@ window.__ModuleLoader__.load({
       "analytics.successRate": "Success rate",
       "boundary.detail": "Error: {message}",
       "boundary.title": "This section is unavailable",
+      "calendar.filter.all": "All",
+      "calendar.filter.content": "Content",
+      "calendar.filter.event": "Events",
+      "calendar.hint": "See at a glance what goes out on each platform: publishes land here automatically, and you can record schedules and platform events.",
+      "calendar.legendEvent": "Platform events",
+      "calendar.more": "{count} more",
+      "calendar.next": "Next ›",
+      "calendar.prev": "‹ Prev",
+      "calendar.title": "Content calendar",
+      "calendar.today": "This month",
+      "calendar.untitled": "(untitled)",
+      "calendar.weekday.0": "Mon",
+      "calendar.weekday.1": "Tue",
+      "calendar.weekday.2": "Wed",
+      "calendar.weekday.3": "Thu",
+      "calendar.weekday.4": "Fri",
+      "calendar.weekday.5": "Sat",
+      "calendar.weekday.6": "Sun",
       "common.cancel": "Cancel",
       "common.clauseSeparator": "; ",
       "common.close": "Close",
@@ -329,7 +367,8 @@ window.__ModuleLoader__.load({
       "publish.guardClear": "Content guard passed.",
       "publish.history": "Publish history",
       "publish.mediaFile": "Asset file",
-      "publish.openFile": "Preview selected file",
+      "publish.openFile": "Open in a new tab",
+      "publish.paneNoFetch": "This environment cannot read the file into the panel; use \"Open in a new tab\" instead.",
       "publish.pickFileOption": "Choose a file (optional)",
       "publish.pickPlatform": "Choose a platform first.",
       "publish.pickPlatformOption": "Choose a platform",
@@ -343,6 +382,7 @@ window.__ModuleLoader__.load({
       "publish.title": "Title",
       "publish.titleRequired": "A title is required.",
       "publish.topic": "Content project",
+      "publish.viewInline": "Preview in side panel",
       "schedule.create": "Add a schedule",
       "schedule.created": "Added; it now appears in the list.",
       "schedule.createdAt": "Added; first run: {at}",
@@ -433,6 +473,10 @@ window.__ModuleLoader__.load({
     var PANEL_ID = "easel-workbench";
     var API_PREFIX = "/easel-workbench/api";
 
+    /** 右侧内联预览：HTML 走沙箱 iframe，其余按文本读回，超过 20 万字符只显示前一段。 */
+    var PANE_TEXT_LIMIT = 200000;
+    var PANE_FRAME_EXTENSIONS = ["html", "htm"];
+
     /**
      * 侧边栏面板条目的排序值。列表按 order 升序渲染，「新会话」按钮在列表上方，
      * 所以越小越靠上；取 5 是为了插在既有条目（插件 0 / 排期 10）之间靠前的位置，
@@ -520,6 +564,39 @@ window.__ModuleLoader__.load({
       ".easel-preview{display:flex;flex-direction:column;gap:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:8px 10px;background:var(--dsw-alias-bg-layer-1)}",
       // 超长路径（venv 绝对路径 + 中文产物名）必须能折行，否则命令会把预览框撑破。
       ".easel-preview p{word-break:break-all;white-space:pre-wrap}",
+      // 内联预览：表单留在左列，产物挤在右列（窄屏时上下堆叠）。
+      ".easel-publish.is-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,42%);column-gap:16px;align-items:start}",
+      ".easel-publish.is-split>*{grid-column:1;min-width:0}",
+      ".easel-publish.is-split>.easel-publish-pane{grid-column:2;grid-row:1 / span 200;position:sticky;top:12px}",
+      "@media (max-width:900px){.easel-publish.is-split{grid-template-columns:minmax(0,1fr)}.easel-publish.is-split>.easel-publish-pane{grid-column:1;grid-row:auto}}",
+      ".easel-publish-pane{display:flex;flex-direction:column;gap:6px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:8px 10px;background:var(--dsw-alias-bg-layer-1)}",
+      ".easel-publish-pane-head{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px}",
+      ".easel-publish-pane-head span{word-break:break-all}",
+      ".easel-publish-frame{width:100%;height:60vh;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-base)}",
+      ".easel-publish-text{margin:0;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-all;font:inherit;color:var(--dsw-alias-label-primary)}",
+      // 内容日历：周一起始的 6×7 月历。色点只用 `--dsw-*` 主题令牌，深浅色都跟着主题走。
+      ".easel-calendar-hint{margin:0 0 8px}",
+      ".easel-calendar-toolbar{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}",
+      ".easel-calendar-month{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}",
+      ".easel-calendar-legend{display:flex;flex-direction:row;flex-wrap:wrap;gap:12px;list-style:none;margin:0 0 8px;padding:0;font-size:12px;color:var(--dsw-alias-label-secondary)}",
+      ".easel-calendar-legend-item{display:inline-flex;align-items:center;gap:4px}",
+      ".easel-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}",
+      ".easel-calendar-weekday{font-size:12px;color:var(--dsw-alias-label-tertiary);text-align:center;padding:2px 0}",
+      ".easel-calendar-day{display:flex;flex-direction:column;gap:2px;min-height:72px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);padding:4px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}",
+      ".easel-calendar-day.is-outside{opacity:.5}",
+      ".easel-calendar-day.is-today{border-color:var(--dsw-alias-brand-primary)}",
+      ".easel-calendar-date{font-size:12px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}",
+      ".easel-calendar-item{display:flex;flex-direction:row;align-items:center;gap:4px;font-size:12px;color:var(--dsw-alias-label-primary);min-width:0}",
+      ".easel-calendar-item-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".easel-calendar-badge{flex:none;border-radius:var(--dsw-radius-sm);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);padding:0 4px;font-size:11px}",
+      ".easel-calendar-more{font-size:11px;color:var(--dsw-alias-label-tertiary)}",
+      ".easel-calendar-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary)}",
+      ".easel-calendar-dot.is-idea{background:var(--dsw-alias-label-tertiary)}",
+      ".easel-calendar-dot.is-draft{background:var(--dsw-alias-state-idle-primary)}",
+      ".easel-calendar-dot.is-scheduled{background:var(--dsw-alias-state-warn-primary)}",
+      ".easel-calendar-dot.is-published{background:var(--dsw-alias-state-success-primary)}",
+      ".easel-calendar-dot.is-event{background:var(--dsw-alias-state-business-primary)}",
+      ".easel-button.is-active{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-label-primary)}",
     ].join("");
 
     // ------------------------------------------------------------------ 工具
@@ -1479,6 +1556,9 @@ window.__ModuleLoader__.load({
       var confirmTuple = React.useState(false);
       var confirmed = confirmTuple[0];
       var setConfirmed = confirmTuple[1];
+      var paneTuple = React.useState({ open: false, path: "", mode: "text", text: "", error: "", loading: false });
+      var pane = paneTuple[0];
+      var setPane = paneTuple[1];
 
       var platforms = useEndpoint(api, "/publish/platforms");
       var projects = useEndpoint(api, "/projects");
@@ -1544,23 +1624,104 @@ window.__ModuleLoader__.load({
         return form.topic === "" || form.file === "" ? "" : "outputs/" + form.topic + "/" + form.file;
       }
 
+      /** 宿主 `/files` 的内联地址（不带 `download=1`，让浏览器按 content-type 渲染）。 */
+      function fileUrl(path) {
+        if (path === "" || typeof props.apiBase !== "string") return "";
+        return props.apiBase + "/files?path=" + encodeURIComponent(path);
+      }
+
       /**
        * 预览选中的产物：走宿主的 `/files`（不带 `download=1`），
        * 宿主按扩展名给 content-type，浏览器直接渲染文章/图片/视频。
        */
-      function openFileLink(marker) {
-        var path = selectedPath();
-        if (path === "" || typeof props.apiBase !== "string") return null;
+      function openFileLink(marker, path) {
+        var target = path === undefined ? selectedPath() : path;
+        var url = fileUrl(target);
+        if (url === "") return null;
         return h(
           "a",
           {
             className: "easel-button",
             "data-easel-publish-open": marker,
-            href: props.apiBase + "/files?path=" + encodeURIComponent(path),
+            href: url,
             target: "_blank",
             rel: "noopener noreferrer",
           },
           t("publish.openFile"),
+        );
+      }
+
+      function extensionOf(path) {
+        var dot = path.lastIndexOf(".");
+        return dot < 0 ? "" : path.slice(dot + 1).toLowerCase();
+      }
+
+      function truncateText(text) {
+        var value = typeof text === "string" ? text : String(text);
+        return value.length > PANE_TEXT_LIMIT ? value.slice(0, PANE_TEXT_LIMIT) + "\n……" : value;
+      }
+
+      function closePane() {
+        setPane({ open: false, path: "", mode: "text", text: "", error: "", loading: false });
+      }
+
+      /**
+       * 在右侧分栏里就地预览选中产物：HTML 交给**无脚本的沙箱 iframe**
+       * （`sandbox=""` 既禁脚本也不给同源访问，文章样式照常生效），其余按纯文本读回来。
+       * MUST NOT 把文件内容直接注入面板：面板与宿主同源。
+       */
+      function openPane() {
+        var path = selectedPath();
+        var url = fileUrl(path);
+        if (url === "") return;
+        if (PANE_FRAME_EXTENSIONS.indexOf(extensionOf(path)) >= 0) {
+          setPane({ open: true, path: path, mode: "frame", text: "", error: "", loading: false });
+          return;
+        }
+        setPane({ open: true, path: path, mode: "text", text: "", error: "", loading: true });
+        if (typeof fetch !== "function") {
+          setPane({ open: true, path: path, mode: "text", text: "", error: t("publish.paneNoFetch"), loading: false });
+          return;
+        }
+        fetch(url)
+          .then(function (response) {
+            if (response.ok !== true) throw new Error("HTTP " + String(response.status));
+            return response.text();
+          })
+          .then(
+            function (text) {
+              setPane({ open: true, path: path, mode: "text", text: truncateText(text), error: "", loading: false });
+            },
+            function (error) {
+              setPane({ open: true, path: path, mode: "text", text: "", error: errorMessage(error), loading: false });
+            },
+          );
+      }
+
+      function paneView() {
+        if (pane.open !== true) return null;
+        var url = fileUrl(pane.path);
+        return h(
+          "div",
+          { className: "easel-publish-pane", "data-easel-publish-pane": "" },
+          h(
+            "div",
+            { className: "easel-publish-pane-head" },
+            h("span", { className: "easel-muted" }, pane.path),
+            h(
+              "div",
+              { className: "easel-actions" },
+              openFileLink("pane", pane.path),
+              h("button", { type: "button", className: "easel-button", "data-easel-publish-pane-close": "", onClick: closePane }, t("common.close")),
+            ),
+          ),
+          pane.error !== "" ? h("p", { className: "easel-error-text", "data-easel-publish-pane-error": "" }, pane.error) : null,
+          pane.loading === true ? h("p", { className: "easel-hint" }, t("common.loading")) : null,
+          pane.mode === "frame" && url !== ""
+            ? h("iframe", { className: "easel-publish-frame", "data-easel-publish-frame": "", src: url, sandbox: "", title: pane.path })
+            : pane.loading === true
+              ? null
+              : h("pre", { className: "easel-publish-text", "data-easel-publish-text": "" }, pane.text),
         );
       }
 
@@ -1616,7 +1777,7 @@ window.__ModuleLoader__.load({
 
       return h(
         "div",
-        { className: "easel-form easel-form-column easel-publish", "data-easel-publish-form": "" },
+        { className: "easel-form easel-form-column easel-publish" + (pane.open === true ? " is-split" : ""), "data-easel-publish-form": "" },
         h(
           "label",
           { className: "easel-field" },
@@ -1656,7 +1817,12 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
-        selectedPath() === "" ? null : h("div", { className: "easel-actions" }, openFileLink("selected")),
+        selectedPath() === "" ? null : h(
+          "div",
+          { className: "easel-actions" },
+          h("button", { type: "button", className: "easel-button", "data-easel-publish-view": "", onClick: openPane }, t("publish.viewInline")),
+          openFileLink("selected"),
+        ),
         h(
           "label",
           { className: "easel-field" },
@@ -1719,6 +1885,7 @@ window.__ModuleLoader__.load({
                 : h("p", { className: "easel-error-text" }, run.error),
             )
           : null,
+        paneView(),
       );
     }
 
@@ -2087,9 +2254,82 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ---------------------------------------------------------------- 内容日历
+
+    /** 月历固定 6 周（42 格），周一起始：与宿主 `monthWindow` 的取数窗口一一对应。 */
+    var CALENDAR_GRID_DAYS = 42;
+
+    /** 表头顺序：ISO 周，周一起始；文案走词条 `calendar.weekday.<0..6>`。 */
+    var CALENDAR_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+    /** 日历过滤器：全部 / 内容 / 活动（`data-easel-calendar-filter` 的取值）。 */
+    var CALENDAR_FILTERS = ["all", "content", "event"];
+
+    /** 图例条目；色点类名 `easel-calendar-dot is-<条目>` 只用 `--dsw-*` 令牌上色。 */
+    var CALENDAR_LEGEND = ["idea", "draft", "scheduled", "published", "event"];
+
+    /** 内容条目的稳定分类枚举（平台活动另算 `event`）。 */
+    var CALENDAR_CATEGORIES = ["idea", "draft", "scheduled", "published"];
+
+    /** 本地时区的 `YYYY-MM-DD`。`toISOString()` 是 UTC，东八区月初月末会错一天。 */
+    function dayKeyOf(date) {
+      var month = date.getMonth() + 1;
+      var day = date.getDate();
+      return (
+        String(date.getFullYear()) +
+        "-" +
+        (month < 10 ? "0" + String(month) : String(month)) +
+        "-" +
+        (day < 10 ? "0" + String(day) : String(day))
+      );
+    }
+
+    function monthKeyOf(date) {
+      return dayKeyOf(date).slice(0, 7);
+    }
+
+    /** 月份加减；`delta` 为月数（-1 = 上个月）。 */
+    function shiftMonthKey(month, delta) {
+      var parts = String(month).split("-");
+      var year = Number(parts[0]);
+      var index = Number(parts[1]) - 1 + delta;
+      return monthKeyOf(new Date(year, index, 1));
+    }
+
+    /** 月历要渲染的日期：当月 1 号所在周的周一起，连续 42 天（首尾补位）。 */
+    function monthGridDays(month) {
+      var parts = String(month).split("-");
+      var first = new Date(Number(parts[0]), Number(parts[1]) - 1, 1);
+      var leading = (first.getDay() + 6) % 7;
+      var start = new Date(first.getFullYear(), first.getMonth(), 1 - leading);
+      var days = [];
+      for (var index = 0; index < CALENDAR_GRID_DAYS; index += 1) {
+        days.push(dayKeyOf(new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)));
+      }
+      return days;
+    }
+
+    /**
+     * 条目分类：平台活动自带 `kind=event`；内容条目优先用宿主给的 `status`
+     * （`idea`/`draft`/`scheduled`/`published`），没给就按「已排期」上色——
+     * 日历上最不该发生的事是「有东西却看不见」。
+     */
+    function calendarCategory(entry) {
+      if (entry.kind === "event") return "event";
+      var status = entry.status === undefined || entry.status === null ? "" : String(entry.status);
+      return CALENDAR_CATEGORIES.indexOf(status) >= 0 ? status : "scheduled";
+    }
+
     function CalendarRegion(props) {
       var t = props.t;
       var state = useEndpoint(props.api, "/schedule");
+      var monthTuple = React.useState(monthKeyOf(new Date()));
+      var month = monthTuple[0];
+      var setMonth = monthTuple[1];
+      var filterTuple = React.useState("all");
+      var filter = filterTuple[0];
+      var setFilter = filterTuple[1];
+      var calendarState = useEndpoint(props.api, "/calendar?month=" + encodeURIComponent(month));
       var failureTuple = React.useState({ id: null, message: "" });
       var failure = failureTuple[0];
       var setFailure = failureTuple[1];
@@ -2117,9 +2357,190 @@ window.__ModuleLoader__.load({
         };
       }
 
+      // 两类数据合成一天的条目：`/schedule` 是 DSH 排期（「登记排期」写的就是它），
+      // `/calendar` 是仓库里的内容日历（发布自动落库的条目 + 平台活动）。
+      var scheduleItems = state.data !== null && Array.isArray(state.data.items) ? state.data.items : [];
+      var calendarItems =
+        calendarState.data !== null && Array.isArray(calendarState.data.items) ? calendarState.data.items : [];
+      var buckets = {};
+      function addEntry(entry) {
+        if (entry.date === "") return;
+        if (buckets[entry.date] === undefined) buckets[entry.date] = [];
+        buckets[entry.date].push(entry);
+      }
+      scheduleItems.forEach(function (item, index) {
+        addEntry({
+          key: "schedule-" + String(item.id === undefined ? index : item.id),
+          date: String(item.scheduledAt === undefined || item.scheduledAt === null ? "" : item.scheduledAt).slice(0, 10),
+          title: String(item.topic || item.title || item.id || ""),
+          platform: "",
+          kind: "content",
+          status: item.status === undefined || item.status === null ? "" : String(item.status),
+        });
+      });
+      calendarItems.forEach(function (item, index) {
+        addEntry({
+          key: "calendar-" + String(item.id === undefined ? index : item.id),
+          date: String(item.date === undefined || item.date === null ? "" : item.date).slice(0, 10),
+          title: String(item.title || ""),
+          platform: String(item.platform || ""),
+          kind: item.kind === "event" ? "event" : "content",
+          status: String(item.status || ""),
+        });
+      });
+      function matchesFilter(entry) {
+        if (filter === "event") return entry.kind === "event";
+        if (filter === "content") return entry.kind !== "event";
+        return true;
+      }
+      function entriesOn(day) {
+        return (buckets[day] === undefined ? [] : buckets[day]).filter(matchesFilter);
+      }
+      var todayKey = dayKeyOf(new Date());
+      var days = monthGridDays(month);
+
       return h(
         "div",
         null,
+        h(
+          Section,
+          { title: t("calendar.title") },
+          h("p", { className: "easel-muted easel-calendar-hint" }, t("calendar.hint")),
+          h(
+            "div",
+            { className: "easel-calendar-toolbar" },
+            h(
+              "div",
+              { className: "easel-actions", "data-easel-calendar-filters": "" },
+              CALENDAR_FILTERS.map(function (option) {
+                return h(
+                  "button",
+                  {
+                    key: option,
+                    type: "button",
+                    className: "easel-button" + (filter === option ? " is-active" : ""),
+                    "data-easel-calendar-filter": option,
+                    "aria-pressed": filter === option ? "true" : "false",
+                    onClick: function () {
+                      setFilter(option);
+                    },
+                  },
+                  t("calendar.filter." + option),
+                );
+              }),
+            ),
+            h(
+              "div",
+              { className: "easel-actions" },
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "easel-button",
+                  "data-easel-calendar-prev": "",
+                  onClick: function () {
+                    setMonth(shiftMonthKey(month, -1));
+                  },
+                },
+                t("calendar.prev"),
+              ),
+              h("span", { className: "easel-calendar-month", "data-easel-calendar-month": month }, month),
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "easel-button",
+                  "data-easel-calendar-next": "",
+                  onClick: function () {
+                    setMonth(shiftMonthKey(month, 1));
+                  },
+                },
+                t("calendar.next"),
+              ),
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "easel-button",
+                  "data-easel-calendar-today": "",
+                  onClick: function () {
+                    setMonth(monthKeyOf(new Date()));
+                  },
+                },
+                t("calendar.today"),
+              ),
+            ),
+          ),
+          h(
+            "ul",
+            { className: "easel-calendar-legend", "data-easel-calendar-legend": "" },
+            CALENDAR_LEGEND.map(function (name) {
+              return h(
+                "li",
+                { key: name, className: "easel-calendar-legend-item" },
+                h("span", { className: "easel-calendar-dot is-" + name }),
+                name === "event" ? t("calendar.legendEvent") : valueLabel(t, name),
+              );
+            }),
+          ),
+          calendarState.status === "error"
+            ? h(
+                "p",
+                { className: "easel-error-text", "data-easel-calendar-error": "" },
+                errorMessage(calendarState.error),
+              )
+            : null,
+          h(
+            "div",
+            { className: "easel-calendar-grid", "data-easel-calendar-grid": "" },
+            CALENDAR_WEEKDAYS.map(function (index) {
+              return h(
+                "div",
+                { key: "weekday-" + String(index), className: "easel-calendar-weekday" },
+                t("calendar.weekday." + String(index)),
+              );
+            }).concat(
+              days.map(function (day) {
+                var entries = entriesOn(day);
+                var shown = entries.slice(0, 3);
+                var className = "easel-calendar-day";
+                if (day.slice(0, 7) !== month) className += " is-outside";
+                if (day === todayKey) className += " is-today";
+                return h(
+                  "div",
+                  { key: day, className: className, "data-easel-calendar-day": day },
+                  h("span", { className: "easel-calendar-date" }, String(Number(day.slice(8, 10)))),
+                  shown.map(function (entry, index) {
+                    var category = calendarCategory(entry);
+                    return h(
+                      "div",
+                      {
+                        key: entry.key + "-" + String(index),
+                        className: "easel-calendar-item is-" + category,
+                        "data-easel-calendar-item": category,
+                        title: entry.title,
+                      },
+                      h("span", { className: "easel-calendar-dot is-" + category }),
+                      entry.platform === "" ? null : h("span", { className: "easel-calendar-badge" }, entry.platform),
+                      h(
+                        "span",
+                        { className: "easel-calendar-item-title" },
+                        entry.title === "" ? t("calendar.untitled") : entry.title,
+                      ),
+                    );
+                  }),
+                  entries.length > shown.length
+                    ? h(
+                        "span",
+                        { className: "easel-calendar-more" },
+                        t("calendar.more", { count: String(entries.length - shown.length) }),
+                      )
+                    : null,
+                );
+              }),
+            ),
+          ),
+        ),
         h(
           Section,
           { title: t("schedule.create") },

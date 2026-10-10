@@ -235,6 +235,32 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
   末 2000 字符），D27 之前客户端从不渲染它。现在失败时就地渲染一个可折叠的 `<details>`，
   让「浏览器没能打开」旁边就有 `300012` 这类可搜索的证据。
 
+### D28：内容日历复用仓库既有的 `calendar_ops.py`，插件只管「排成一个月」
+
+用户参照 Easel 自带的内容日历提出「日历区应该是一张真正的月历」。Easel 那一页是它自己的前端组件 + 自己的
+store，插件无法复用它的组件；可复用且稳定的是**数据源**——仓库里本来就有内容日历脚本。于是「借鉴」落在
+信息结构与视觉语言上（周一起始的 6 周网格、平台徽标、五色图例、「全部／内容／活动」筛选），而不是代码：
+
+- 数据源只有一个：`skills/shared/scripts/calendar_ops.py`（`list --since --until` 回
+  `{"count":…,"items":[…]}`，条目含 `date/time/title/platform/kind/event_type/note`；`event` 子命令登记
+  平台活动，阴历节日由 `skill-event-calendar/scripts/lunar.py` 供给）。**插件不自造节日表**——那会立刻
+  变成第二份会漂移的真相。
+- 宿主只做规整：`lib/host/calendar.js` 的 `monthWindow(month)` 把一个月扩成**固定 42 天**（当月 1 号所在周
+  的周一起），与界面格子数一一对应；`dayKey()` 用**本地时区**拼 `YYYY-MM-DD`（`toISOString()` 是 UTC，
+  东八区月初月末会整体错一天——这正是月历最容易错的地方）；`normalizeCalendarItems()` 丢掉没有 `date`
+  的条目（`seed-holidays` 会写入这类没有平台的内容项），并把 `event_type`/`end_date` 换成驼峰字段。
+  缺脚本、缺解释器、输出不是 JSON 三种情况各自映射到既有错误码，让面板能说人话。
+- 客户端合并两个来源：`GET /calendar`（内容 + 平台活动）与既有 `GET /schedule`（DSH 排期）在渲染前按
+  本地日期落进同一个格子，**不新增第二个宿主接口**，也不把排期搬进日历脚本的库里。
+- 取不回数据时日历区就地说明原因，`MUST NOT` 让整块区域空白，也不把其余区域拖成错误态。
+- 图例的五个色点只用 DSH 主题令牌（`--dsw-alias-label-tertiary`／`state-idle`／`state-warn`／
+  `state-success`／`state-business` 的 `-primary`），因为客户端测试明令禁止硬编码色值——否则明暗主题下
+  必然有一边看不清。
+
+**实测**：`node --test test/calendar.test.mjs` 12/12、`node --test test/web.test.mjs` 5/5（新增
+「内容日历路由」1 例）、`node --test test/client.test.mjs` 24/24（新增「内容日历：周一起始铺满 42 格，
+筛选与翻月都能用」），全量 `test/*.test.mjs` 352/352。
+
 ## Risks / Trade-offs
 
 - **[`sidebar.panellist` 的像素位置未截图验证]**：位置结论来自 README 描述的渲染次序（品牌行 → New Session → panellist → 会话列表 → 设置行），未在真实界面上确认。→ 缓解：实现期第一件事是在本机 profile 装一个最小 bundle 只注册一个 panellist 条目，截图确认位置；若不满足需求，退路是改用 `sidebar.brand` 下方的自定义插槽或 `sidebar.workspaces` 之上的就近锚点（备选见 `EASEL-DSH-需求文档.md` F4.3）。

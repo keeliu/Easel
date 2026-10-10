@@ -500,8 +500,14 @@ test("宿主半边未挂载（404 + 空响应体）时给可操作的提示，�
   await view.unmount();
 });
 
-test("产物静态约束：无 iframe、无 DSH 客户端包依赖、无硬编码色值", async () => {
-  assert.equal(/iframe/i.test(bundleSource), false, "不得使用 iframe");
+test("产物静态约束：界面不用 iframe、无 DSH 客户端包依赖、无硬编码色值", async () => {
+  // 面板本身必须是页面内组件；唯一允许的 iframe 是**产物预览**那个无脚本沙箱
+  // （`sandbox=""`，见「HTML 产物只在无脚本沙箱里预览」用例），不得用来承载界面。
+  const frames = [...bundleSource.matchAll(/h\(\s*["']iframe["']\s*,\s*\{([\s\S]{0,400}?)\}\s*\)/g)].map((match) => match[1]);
+  assert.equal((bundleSource.match(/["']iframe["']/g) ?? []).length, frames.length, "iframe 只能由受检的那一处创建");
+  assert.equal(frames.length, 1, "本就只该有产物预览一个 iframe");
+  assert.match(frames[0], /sandbox:\s*""/, "产物预览 iframe 必须无脚本、无同源访问");
+  assert.match(frames[0], /data-easel-publish-frame/, "被允许的 iframe 只能是产物预览");
   assert.doesNotMatch(bundleSource, /require\(\s*["']@deepseek-ai\//, "不得 require DSH 客户端包");
 
   const specifiers = [...bundleSource.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1]);
@@ -974,6 +980,7 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
       };
     }
     if (target.includes("/projects")) return { status: 200, json: async () => ({ ok: true, projects: [{ topic: "秋季护肤" }] }) };
+    if (target.includes("/files?path=")) return { ok: true, status: 200, text: async () => "# 秋季护肤三步走\n\n第一步：温和清洁。\n" };
     return { status: 200, json: async () => ({ ok: true }) };
   };
 
@@ -1007,9 +1014,27 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
 
   // 选中产物后必须能直接看它：走宿主 /files 内联返回，而不是只给一行命令。
   const openLink = form.querySelector("[data-easel-publish-open]");
-  assert.ok(openLink !== null, "选中产物后要有「预览选中的文件」入口");
+  assert.ok(openLink !== null, "选中产物后要有打开产物的入口");
   assert.equal(openLink.getAttribute("href"), "/easel-workbench/api/files?path=" + encodeURIComponent("outputs/秋季护肤/note.md"));
   assert.equal(openLink.getAttribute("target"), "_blank");
+
+  // 就地预览：不离开表单，右列摊开产物内容。
+  await click(form.querySelector("[data-easel-publish-view]"));
+  await flush();
+  await flush();
+  assert.match(form.className, /is-split/, "点「在右侧预览」后表单要进入分栏形态");
+  const pane = form.querySelector("[data-easel-publish-pane]");
+  assert.ok(pane !== null, "分栏里要有产物预览面板");
+  assert.match(pane.querySelector("[data-easel-publish-text]").textContent, /秋季护肤三步走/, "文本产物要按纯文本摊开");
+  assert.equal(
+    pane.querySelector('[data-easel-publish-open="pane"]').getAttribute("href"),
+    "/easel-workbench/api/files?path=" + encodeURIComponent("outputs/秋季护肤/note.md"),
+    "分栏里仍要保留新标签页退路",
+  );
+  await click(pane.querySelector("[data-easel-publish-pane-close]"));
+  await flush();
+  assert.equal(form.querySelector("[data-easel-publish-pane]"), null, "关掉后分栏要收起");
+  assert.doesNotMatch(form.className, /is-split/);
 
   await setValue(form.querySelector("[data-easel-publish-title]"), "秋季护肤三步走");
   await setValue(form.querySelector("[data-easel-publish-tags]"), "护肤, 通勤");
@@ -1043,6 +1068,69 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
   assert.equal(executes.length, 1, "勾选确认后必须 POST 执行端点");
   assert.equal(form.querySelector("[data-easel-publish-result]").getAttribute("data-easel-publish-result"), "ok");
   assert.match(form.querySelector("[data-easel-publish-result]").textContent, /已发布/);
+
+  await view.unmount();
+});
+
+test("HTML 产物只在无脚本沙箱里预览，绝不注入面板 DOM", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    calls.push({ url: target, options: options ?? null });
+    if (target.includes("/publish/platforms")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          platforms: [{ id: "wechat", label: "微信公众号", style: "wechat", accepts: ["article"], limits: { title: 64, body: 0, tags: 0 } }],
+        }),
+      };
+    }
+    if (target.includes("/projects/")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          topic: "DSH插件",
+          files: [{ path: "dsh-context-公众号排版.html", name: "dsh-context-公众号排版.html", kind: "html", bytes: 15557 }],
+        }),
+      };
+    }
+    if (target.includes("/projects")) return { status: 200, json: async () => ({ ok: true, projects: [{ topic: "DSH插件" }] }) };
+    if (target.includes("/files?path=")) return { ok: true, status: 200, text: async () => "<h1>不该被注入面板</h1>" };
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="publish"]'));
+  await flush();
+
+  const form = view.container.querySelector("[data-easel-publish-form]");
+  await setValue(form.querySelector("[data-easel-publish-platform]"), "wechat");
+  await setValue(form.querySelector("[data-easel-publish-topic]"), "DSH插件");
+  await flush();
+  await setValue(form.querySelector("[data-easel-publish-file]"), "dsh-context-公众号排版.html");
+  await flush();
+  await click(form.querySelector("[data-easel-publish-view]"));
+  await flush();
+
+  const frame = form.querySelector("[data-easel-publish-frame]");
+  assert.ok(frame !== null, "HTML 产物要在沙箱 iframe 里预览");
+  assert.equal(frame.getAttribute("sandbox"), "", "沙箱必须既禁脚本也不给同源访问");
+  assert.equal(
+    frame.getAttribute("src"),
+    "/easel-workbench/api/files?path=" + encodeURIComponent("outputs/DSH插件/dsh-context-公众号排版.html"),
+  );
+  assert.equal(form.querySelector("[data-easel-publish-text]"), null, "HTML 不走纯文本分支");
+  assert.doesNotMatch(form.innerHTML, /不该被注入面板/, "产物内容绝不能被注入面板 DOM");
+  assert.equal(
+    calls.filter((call) => call.url.includes("/files?path=")).length,
+    0,
+    "HTML 交给 iframe 自己加载，不该再额外取一次文本",
+  );
 
   await view.unmount();
 });
@@ -1333,6 +1421,100 @@ test("排期条目可以删除，没有会话绑定的条目不显示删除按�
     view.container.querySelector("[data-easel-schedule-delete-error]").textContent,
     /DSH 拒绝了这次删除/,
   );
+
+  await view.unmount();
+});
+
+test("内容日历：周一起始铺满 42 格，筛选与翻月都能用", async () => {
+  const now = new Date();
+  const pad = (value) => (value < 10 ? "0" + String(value) : String(value));
+  const month = now.getFullYear() + "-" + pad(now.getMonth() + 1);
+  const nextMonth = (() => {
+    const shifted = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return shifted.getFullYear() + "-" + pad(shifted.getMonth() + 1);
+  })();
+  const eventDay = month + "-19";
+  const contentDay = month + "-25";
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const target = String(url);
+    const method = options?.method ?? "GET";
+    calls.push({ url: target, method, options: options ?? null });
+    if (target.includes("/calendar")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          month,
+          from: month + "-01",
+          to: month + "-30",
+          count: 2,
+          items: [
+            { id: "e1", date: eventDay, title: "七夕节", platform: "", kind: "event", status: "", eventType: "节日" },
+            { id: "c1", date: contentDay, title: "秋季护肤三步走", platform: "小红书", kind: "content", status: "scheduled" },
+          ],
+        }),
+      };
+    }
+    if (target.includes("/schedule")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          items: [
+            { id: "sch-1", topic: "草稿里的选题", status: "draft", scheduledAt: contentDay + "T09:00:00.000+08:00", sessionId: "s-1" },
+          ],
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true, items: [], total: 0, active: 0 }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+  const view = await mount(React.createElement(panelOf(state)));
+  await click(view.container.querySelector('[data-easel-nav="calendar"]'));
+  await flush();
+
+  const days = view.container.querySelectorAll("[data-easel-calendar-day]");
+  assert.equal(days.length, 42, "月历固定 6 周 × 7 天");
+  assert.equal(days[0].getAttribute("data-easel-calendar-day") <= month + "-01", true, "首格是当月 1 号所在周的周一或更早");
+  const weekdays = [...view.container.querySelectorAll(".easel-calendar-weekday")].map((node) => node.textContent);
+  assert.deepEqual(weekdays, ["一", "二", "三", "四", "五", "六", "日"]);
+  assert.equal(view.container.querySelectorAll(".easel-calendar-legend-item").length, 5, "五个图例");
+  assert.equal(view.container.querySelectorAll(".easel-calendar-dot.is-event").length >= 1, true);
+  assert.match(calls.find((call) => call.url.includes("/calendar")).url, /calendar\?month=/);
+
+  const dayCell = (key) => view.container.querySelector('[data-easel-calendar-day="' + key + '"]');
+  assert.match(dayCell(eventDay).textContent, /七夕节/);
+  assert.equal(dayCell(eventDay).querySelector('[data-easel-calendar-item="event"]') !== null, true);
+  assert.match(dayCell(contentDay).textContent, /秋季护肤三步走/);
+  assert.match(dayCell(contentDay).textContent, /小红书/, "平台以徽标出现在格子里");
+  assert.equal(dayCell(contentDay).querySelector('[data-easel-calendar-item="scheduled"]') !== null, true);
+  assert.equal(dayCell(contentDay).querySelector('[data-easel-calendar-item="draft"]') !== null, true, "DSH 排期也进月历");
+
+  // 只看活动：内容条目全部收起。
+  await click(view.container.querySelector('[data-easel-calendar-filter="event"]'));
+  await flush();
+  assert.equal(view.container.querySelectorAll('[data-easel-calendar-item="event"]').length, 1);
+  assert.equal(view.container.querySelectorAll('[data-easel-calendar-item="scheduled"]').length, 0);
+  assert.equal(view.container.querySelector('[data-easel-calendar-item="draft"]'), null);
+
+  // 只看内容：平台活动收起。
+  await click(view.container.querySelector('[data-easel-calendar-filter="content"]'));
+  await flush();
+  assert.equal(view.container.querySelectorAll('[data-easel-calendar-item="event"]').length, 0);
+  assert.equal(view.container.querySelectorAll('[data-easel-calendar-item="scheduled"]').length, 1);
+
+  // 翻月：宿主拿到的是新的 YYYY-MM。
+  await click(view.container.querySelector('[data-easel-calendar-next]'));
+  await flush();
+  assert.equal(view.container.querySelector("[data-easel-calendar-month]").textContent, nextMonth);
+  assert.match(calls.filter((call) => call.url.includes("/calendar")).at(-1).url, new RegExp("month=" + nextMonth));
+  await click(view.container.querySelector('[data-easel-calendar-today]'));
+  await flush();
+  assert.equal(view.container.querySelector("[data-easel-calendar-month]").textContent, month);
 
   await view.unmount();
 });

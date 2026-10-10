@@ -32,6 +32,7 @@ import { createPathPolicy } from "./host/paths.js";
 import { createPersonaService } from "./host/persona.js";
 import { createPublishService } from "./host/publish.js";
 import { createScheduleService } from "./host/schedule.js";
+import { createCalendarService } from "./host/calendar.js";
 import { createSelfcheckService } from "./host/selfcheck.js";
 import { lazyService, serviceOf } from "./host/services.js";
 import { createSessionCatalog } from "./host/sessions.js";
@@ -123,6 +124,9 @@ export function apply(ctx, rawConfig) {
   const publish = createPublishService({ runtime, subprocess, paths, gate, resolvePython });
   const accounts = createAccountsService({ runtime, subprocess, paths, resolvePython });
   const schedule = createScheduleService({ ctx });
+  // 内容日历读的是仓库里既有的 `skills/shared/scripts/calendar_ops.py`：
+  // 与发布/登录一样，Python 解释器要等运行时探测，因此传解析器而不是值。
+  const calendar = createCalendarService({ runtime, subprocess, resolvePython });
   const dispatch = createDispatchService({ ctx, runtime, paths });
   const sessionCatalog = createSessionCatalog({ ctx });
   const selfcheck = createSelfcheckService({ ctx, runtime, paths });

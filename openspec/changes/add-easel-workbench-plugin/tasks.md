@@ -122,12 +122,20 @@
 - [x] 13.11 免 root 补齐 Chromium 系统共享库，并把它接进子进程（真实缺陷）：本机 `ldd` playwright 下载的 chromium 得到 **24 个 `=> not found`**（首个 `libglib-2.0.so.0`），内核直接执行 `exitCode 127`，脚本把这一切折叠成「浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。」——**这句话无法行动**。上游只做 `playwright install chromium`（不装系统库），官方 `install-deps` 要 root。新增 `scripts/install-browser-deps.mjs`（零依赖 Node ESM）：缺失 soname → `SONAME_PACKAGES` 映射 Debian 包 → 拉镜像 `Packages.gz` 索引 → 递归 `Depends` 闭包 → 下载 `.deb` → `dpkg-deb -x` 解到 `<runtimeDir>/chromium-deps/root`，写出 `installed.json`／`env.sh`，**不改系统目录、不需要 root**；新增 `lib/host/browser-deps.js` 只产出 `LD_LIBRARY_PATH` 覆盖，`lib/host/exec.js` 把 `spec.env` 透传给 `subprocess.spawn`（`runCommand` 与 `startCommand` 两处），登录/`whoami`/账号数据/发布四条链路各注入一次；非 Linux 返回空对象。验证方式：`node --test test/browser-deps.test.mjs`（11 例：路径只认真实目录、原有 `LD_LIBRARY_PATH` 保留在后、内核定位优先级、真探测用退出码判定、缺库 127 不谎报成功、spawn 抛错被折叠、接线防回归）。**实测结论**：11/11 通过；真机跑一次安装解出 **82 个包**，带注入环境执行内核 `--version` → `Chromium 148.0.7778.96`
 - [x] 13.12 自检新增「浏览器内核」条目 + 面板摊开脚本输出（真实反馈）：`lib/host/browser-deps.js` 的 `probeChromium()` **真的启动一次内核**（`--version`），状态只看退出码——「包可导入」「文件存在」都不算；`lib/host/selfcheck.js` 新增 `browser-launch` 条目（找不到内核 → `missing`；内核在但秒退 → `degraded` 并带出退出码与输出尾部；能启动 → `ok` 并写出版本与内核路径），`hint` 指向免 root 补库脚本并说明 `--check` 可只看诊断。登录脚本自报的状态往往只有一句话，而 `loginStatus` 早已带 `logTail`（`stderr+stdout` 末 2000 字符）却从没被渲染过：`src/client.js` 在登录失败时就地渲染可折叠的 `<details data-easel-login-log>`，新增词条 `login.logSummary`。验证方式：`node --test test/selfcheck.test.mjs`（12 例）与 `node --test test/client.test.mjs` 的「脚本只留下一句「浏览器没能打开」时，面板要能就地摊开它的原始输出」用例。**实测结论**：自检 12/12、客户端 22/22 通过；真机探测回 `launched:true`、`148.0.7778.96`、注入路径以 `<插件>/.runtime/chromium-deps/root/usr/lib/x86_64-linux-gnu` 开头。**仍未解决且插件无法解决**：本机出口 IP 被小红书判为风险 IP（安全限制 `300012`），二维码在此环境无法弹出——脚本已给出两条出路（`--proxy socks5://…`，或在正常网络机器上登录后把 `~/.easel-browser-profiles/XiaohongshuProfile` 整个拷来复用），插件侧只保证把这类原始输出如实送到眼前
 
+## 14. 内容日历（实际使用反馈第四批）
+
+用户参照 Easel 自带的内容日历指出日历区应当是「每天各平台发什么一目了然」的月历，而不是一条排期列表。本批复用仓库既有的 `skills/shared/scripts/calendar_ops.py` 把日历区做成 6×7 月历，并补上筛选与翻月（详见 `design.md` 的 D28 与 `specs/creator-workbench-ui/spec.md` 的两条 requirement）：
+
+- [x] 14.1 宿主内容日历服务（无需新增数据源）：新增 `lib/host/calendar.js`——`monthWindow(month)` 把一个月扩成**固定 42 天**（当月 1 号所在周的周一起，与界面格子数一一对应）；`dayKey()` 用**本地时区**拼 `YYYY-MM-DD`（`toISOString()` 是 UTC，东八区月初月末会错一天）；`normalizeCalendarItems()` 丢掉没有 `date` 的条目（`seed-holidays` 会写入这类无平台内容项）、把 `event_type`/`end_date` 换成驼峰字段；`createCalendarService({runtime, subprocess, resolvePython}).month(monthId)` 执行 `calendar_ops.py list --since --until`，缺脚本／缺解释器回 `NOT_CONFIGURED`（带 `details.path`）、输出不是 JSON 回 `SOURCE_UNAVAILABLE`（带退出码与 stderr 尾巴）。验证方式：新增 `node --test test/calendar.test.mjs`（12 例：本地日期与月份规整、42 天且首日为周一、跨年窗口、argv 形状、条目规整、四条 `month()` 行为）。**实测结论**：12/12 通过
+- [x] 14.2 路由接线：`lib/host/web.js` 新增 `GET /calendar`（`?month=` 缺省与空串都交给宿主决定「当月」，不把空字符串塞进月份解析），`lib/index.js` 构造 `createCalendarService` 并注入 `createWebService`。验证方式：`node --test test/web.test.mjs` 新增「内容日历路由」用例（断言 `month=2026-08` 原样透传、缺省与空串都是 `undefined`）。**实测结论**：5/5 通过
+- [x] 14.3 客户端月历视图：`src/client.js` 的日历区新增 6×7 月历——`monthKeyOf`/`shiftMonthKey`/`monthGridDays`/`dayKeyOf`/`calendarCategory`（`kind === "event"` → 平台活动，其余按宿主 `status`，不认识的值按已排期上色）；把 `GET /calendar`（内容 + 平台活动）与既有 `GET /schedule`（DSH 排期）在渲染前按本地日期合并落进同一个格子；工具栏给「全部／内容／活动」筛选与「‹ 上月／下月 ›／本月」翻月；格子里的平台名做成徽标，同日超过 3 条显示「还有 N 条」；日历区出错时就地显示原因而不影响下方排期表单与列表。词条新增 18 条 `calendar.*`（含 `calendar.weekday.0..6`），中英各 218 键；CSS 只用 `--dsw-*` 令牌（五个色点分别取 `--dsw-alias-label-tertiary`／`state-idle-primary`／`state-warn-primary`／`state-success-primary`／`state-business-primary`），因为客户端测试禁止硬编码色值。验证方式：`node --test test/client.test.mjs` 新增「内容日历：周一起始铺满 42 格，筛选与翻月都能用」（断言 42 格、周一起始表头、5 个图例、活动与内容两类条目落格与平台徽标、筛选切换后条目增减、翻月请求带新 `month=`、「本月」回到当月）。**实测结论**：客户端 24/24 通过；`node scripts/build-client.mjs` → `lib/client.js` 153036 字节
+
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **322 项全绿**（`fail 0`；
-  早期记录为 277 项，§10–§13 的用例陆续补入后为 322）；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **352 项全绿**（`fail 0`；
+  早期记录为 277 项，§10–§13 的用例陆续补入后为 337，§14 的内容日历再补入 15 项后为 352）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -268,6 +276,16 @@
   `node --test test/client.test.mjs` → 22/22；全量 `node --test test/*.test.mjs` → **337 项全绿**
   （322 → 337：新增 11 + 3 + 1）。**插件之外仍开放**：出口 IP 的小红书风控 `300012` 需代理或导入既有
   profile 目录（见 13.12），这是环境问题而不是插件缺陷——面板现在会把 `300012` 这类原文直接显示出来。
+- **内容日历（2026-10-10，第 20 项实现期改进，见 design D28）**：用户参照 Easel 自带的内容日历提出「日历区应该
+  是一张真正的月历」。复用仓库既有的 `skills/shared/scripts/calendar_ops.py`（`list --since --until`），
+  **不自造节日表**：宿主 `lib/host/calendar.js` 把一个月扩成固定 42 天（周一起始，与界面格子数一一对应），
+  `dayKey()` 用本地时区拼 `YYYY-MM-DD`（`toISOString()` 是 UTC，东八区月初月末会错一天），
+  `normalizeCalendarItems()` 丢掉没有 `date` 的条目；客户端把 `GET /calendar` 与既有 `GET /schedule`
+  在渲染前合并落进同一个格子，并给出「全部／内容／活动」筛选与「‹ 上月／下月 ›／本月」翻月，
+  五个图例色点全部取 `--dsw-*` 令牌（客户端测试禁止硬编码色值）。测试：
+  `node --test test/calendar.test.mjs` → 12/12、`node --test test/web.test.mjs` → 5/5（新增路由 1 例）、
+  `node --test test/client.test.mjs` → 24/24（新增月历 1 例）；全量 `node --test test/*.test.mjs` →
+  **352 项全绿**（337 → 352）；`node scripts/build-client.mjs` → `lib/client.js` 153036 字节。
 
 ## 待用户验收（本机无法完成的部分）
 
