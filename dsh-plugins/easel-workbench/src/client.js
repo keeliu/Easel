@@ -102,6 +102,9 @@ window.__ModuleLoader__.load({
       ".easel-boundary-title{margin:0;font-weight:600}",
       ".easel-boundary-detail{margin:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}",
       ".easel-error-text{margin:0;color:var(--dsw-alias-state-error-primary)}",
+      ".easel-log-details{margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}",
+      ".easel-log-details>summary{cursor:pointer}",
+      ".easel-log{margin:6px 0 0;padding:8px;max-height:200px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--dsw-alias-bg-elevated);border-radius:var(--dsw-radius-sm);font-size:12px}",
       ".easel-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px}",
       ".easel-empty{display:flex;flex-direction:column;gap:4px}",
       ".easel-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}",
@@ -117,6 +120,8 @@ window.__ModuleLoader__.load({
       ".easel-qr{width:200px;height:200px;image-rendering:pixelated;align-self:flex-start;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}",
       ".easel-check{display:flex;flex-direction:row;align-items:center;gap:6px}",
       ".easel-preview{display:flex;flex-direction:column;gap:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:8px 10px;background:var(--dsw-alias-bg-layer-1)}",
+      // 超长路径（venv 绝对路径 + 中文产物名）必须能折行，否则命令会把预览框撑破。
+      ".easel-preview p{word-break:break-all;white-space:pre-wrap}",
     ].join("");
 
     // ------------------------------------------------------------------ 工具
@@ -219,17 +224,29 @@ window.__ModuleLoader__.load({
             .then(function (payload) {
               if (payload !== null && payload.ok === true) return payload;
               var hostNotMounted = payload === null && response.status === 404;
+              // 宿主自己答的 404（`未知接口：…`）：跑在 DSH 进程里的宿主半边还是旧版。
+              // 页面刷新只换界面，宿主代码要重启 DSH 进程才会重新 import，所以把
+              // 「怎么修」直接写进错误文案（design D26）。
+              var hostStale =
+                payload !== null &&
+                payload.code === "not-found" &&
+                typeof payload.message === "string" &&
+                payload.message.indexOf("未知接口") >= 0;
               var message = hostNotMounted
                 ? tr("error.hostNotMounted")
-                : payload !== null && typeof payload.message === "string" && payload.message !== ""
-                  ? payload.message
-                  : "HTTP " + String(response.status);
+                : hostStale
+                  ? payload.message + " " + tr("error.hostStale")
+                  : payload !== null && typeof payload.message === "string" && payload.message !== ""
+                    ? payload.message
+                    : "HTTP " + String(response.status);
               var error = new Error(message);
               error.code = hostNotMounted
                 ? "host-not-mounted"
-                : payload !== null && typeof payload.code === "string"
-                  ? payload.code
-                  : "http-" + String(response.status);
+                : hostStale
+                  ? "host-stale"
+                  : payload !== null && typeof payload.code === "string"
+                    ? payload.code
+                    : "http-" + String(response.status);
               throw error;
             });
         });
@@ -574,6 +591,11 @@ window.__ModuleLoader__.load({
       var state = view.state;
       var rawState = state === null || state === undefined ? "" : String(state.rawState || "");
       var running = view.phase === "running";
+      // 脚本自己写的状态文案往往只有一句「浏览器没能打开」——真正的原因（缺系统库、
+      // 代理不通、风控）只在它的输出里。末尾这段原始输出是用户唯一能自查的线索，
+      // 所以失败时就地摊开，而不是让用户去翻 DSH 日志。
+      var logTail = state !== null && state !== undefined && typeof state.logTail === "string" ? state.logTail : "";
+      var showLog = logTail !== "" && (rawState === "error" || view.error !== "");
       return h(
         "div",
         { className: "easel-login", "data-easel-login": String(platform) },
@@ -587,6 +609,14 @@ window.__ModuleLoader__.load({
         ),
         view.error !== ""
           ? h("p", { className: "easel-error-text", "data-easel-login-error": "" }, view.error)
+          : null,
+        showLog
+          ? h(
+              "details",
+              { className: "easel-log-details", "data-easel-login-log": String(platform) },
+              h("summary", null, t("login.logSummary")),
+              h("pre", { className: "easel-log" }, logTail),
+            )
           : null,
         state !== null && state !== undefined && state.qrReady === true
           ? h("img", {
@@ -1111,6 +1141,31 @@ window.__ModuleLoader__.load({
         return { input: input, article: article };
       }
 
+      /** 选中产物相对数据根的路径：发布入参与面板内预览共用同一条路径。 */
+      function selectedPath() {
+        return form.topic === "" || form.file === "" ? "" : "outputs/" + form.topic + "/" + form.file;
+      }
+
+      /**
+       * 预览选中的产物：走宿主的 `/files`（不带 `download=1`），
+       * 宿主按扩展名给 content-type，浏览器直接渲染文章/图片/视频。
+       */
+      function openFileLink(marker) {
+        var path = selectedPath();
+        if (path === "" || typeof props.apiBase !== "string") return null;
+        return h(
+          "a",
+          {
+            className: "easel-button",
+            "data-easel-publish-open": marker,
+            href: props.apiBase + "/files?path=" + encodeURIComponent(path),
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+          t("publish.openFile"),
+        );
+      }
+
       function post(path, input) {
         return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
       }
@@ -1203,6 +1258,7 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
+        selectedPath() === "" ? null : h("div", { className: "easel-actions" }, openFileLink("selected")),
         h(
           "label",
           { className: "easel-field" },
@@ -1245,6 +1301,7 @@ window.__ModuleLoader__.load({
               (Array.isArray(run.preview.warnings) ? run.preview.warnings : []).map(function (warning, index) {
                 return h("p", { className: "easel-hint", key: "warn-" + String(index) }, String(warning));
               }),
+              selectedPath() === "" ? null : h("div", { className: "easel-actions" }, openFileLink("preview")),
             )
           : null,
         run.phase === "done"
@@ -1280,6 +1337,7 @@ window.__ModuleLoader__.load({
           h(PublishForm, {
             t: t,
             api: props.api,
+            apiBase: props.apiBase,
             onPublished: function () {
               history.reload();
             },

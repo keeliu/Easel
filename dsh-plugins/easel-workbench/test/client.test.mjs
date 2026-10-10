@@ -1003,6 +1003,14 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
   await setValue(form.querySelector("[data-easel-publish-topic]"), "秋季护肤");
   await flush();
   await setValue(form.querySelector("[data-easel-publish-file]"), "note.md");
+  await flush();
+
+  // 选中产物后必须能直接看它：走宿主 /files 内联返回，而不是只给一行命令。
+  const openLink = form.querySelector("[data-easel-publish-open]");
+  assert.ok(openLink !== null, "选中产物后要有「预览选中的文件」入口");
+  assert.equal(openLink.getAttribute("href"), "/easel-workbench/api/files?path=" + encodeURIComponent("outputs/秋季护肤/note.md"));
+  assert.equal(openLink.getAttribute("target"), "_blank");
+
   await setValue(form.querySelector("[data-easel-publish-title]"), "秋季护肤三步走");
   await setValue(form.querySelector("[data-easel-publish-tags]"), "护肤, 通勤");
   await click(form.querySelector("[data-easel-publish-preview]"));
@@ -1019,6 +1027,7 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
   const previewed = form.querySelector("[data-easel-publish-preview-result]");
   assert.match(previewed.textContent, /xhs_publish\.py/, "预览要把将要执行的命令摊开给人看");
   assert.match(previewed.textContent, /内容门禁通过/);
+  assert.ok(previewed.querySelector("[data-easel-publish-open]") !== null, "预检结果里也要能直接打开产物");
 
   // 没勾选确认就点发布：本地拦住，绝不真发。
   await click(form.querySelector("[data-easel-publish-execute]"));
@@ -1036,6 +1045,103 @@ test("发布：预览不执行、执行必须先勾选确认，参数按平台�
   assert.match(form.querySelector("[data-easel-publish-result]").textContent, /已发布/);
 
   await view.unmount();
+});
+
+test("宿主还是旧版（未知接口 404）时，错误文案要给出「重启 DSH」这一步", async () => {
+  const fetchImpl = async (url) => {
+    const target = String(url);
+    if (target.endsWith("/accounts/xiaohongshu/login")) {
+      return {
+        status: 404,
+        json: async () => ({
+          ok: false,
+          code: "not-found",
+          message: "未知接口：POST /easel-workbench/api/accounts/xiaohongshu/login",
+        }),
+      };
+    }
+    if (target.includes("/login/status")) {
+      return { status: 200, json: async () => ({ ok: true, platform: "xiaohongshu", rawState: "unauthorized", running: false }) };
+    }
+    if (target.includes("/accounts")) {
+      return {
+        status: 200,
+        json: async () => ({ ok: true, accounts: [{ platform: "xiaohongshu", label: "小红书", state: "unauthorized", message: "未授权" }] }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  try {
+    await click(view.container.querySelector(String.raw`[data-easel-nav="accounts"]`));
+    await flush();
+    await click(view.container.querySelector(String.raw`[data-easel-login-toggle="xiaohongshu"]`));
+    await flush();
+    const panel = view.container.querySelector(String.raw`[data-easel-login="xiaohongshu"]`);
+    await click(panel.querySelector("[data-easel-login-start]"));
+    await flush();
+
+    const error = panel.querySelector("[data-easel-login-error]");
+    assert.ok(error !== null, "启动失败要如实显示错误");
+    assert.match(error.textContent, /未知接口/, "保留宿主原文，别把真相吞掉");
+    assert.match(error.textContent, /重启 DSH/, "光说接口不认不够，要给出可执行的下一步");
+  } finally {
+    await view.unmount();
+  }
+});
+
+test("脚本只留下一句「浏览器没能打开」时，面板要能就地摊开它的原始输出", async () => {
+  const fetchImpl = async (url) => {
+    const target = String(url);
+    if (target.includes("/login/status")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          platform: "xiaohongshu",
+          rawState: "error",
+          running: false,
+          message: "浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。",
+          logTail: "ERROR: 小红书判定当前网络为风险 IP（安全限制 300012「IP存在风险，请切换可靠网络环境」）",
+        }),
+      };
+    }
+    if (target.includes("/accounts")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          accounts: [{ platform: "xiaohongshu", label: "小红书", state: "unauthorized", message: "未授权" }],
+        }),
+      };
+    }
+    return { status: 200, json: async () => ({ ok: true }) };
+  };
+
+  const bundle = await loadBundle(fetchImpl);
+  const { ctx, state } = createContext();
+  bundle.exports.apply(ctx);
+
+  const view = await mount(React.createElement(panelOf(state)));
+  try {
+    await click(view.container.querySelector(String.raw`[data-easel-nav="accounts"]`));
+    await flush();
+    await click(view.container.querySelector(String.raw`[data-easel-login-toggle="xiaohongshu"]`));
+    await flush();
+
+    const panel = view.container.querySelector(String.raw`[data-easel-login="xiaohongshu"]`);
+    const log = panel.querySelector("[data-easel-login-log]");
+    assert.ok(log !== null, "脚本自己写的状态太短，必须能就地看到它的原始输出");
+    assert.match(log.textContent, /300012/, "原始输出要原样带出来，不能二次概括");
+    assert.match(log.textContent, /脚本原始输出/, "要有可展开的标题，默认不占版面");
+  } finally {
+    await view.unmount();
+  }
 });
 
 test("热点：可选来源用 ?ids= 传给宿主，线索能存进选题库", async () => {

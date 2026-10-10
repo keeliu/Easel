@@ -294,6 +294,9 @@ roots”，且 `includeDefaultRoots`（`:33`）默认 `true` → **原 DSH 技�
 | 自检里 `python`/`ffmpeg` 缺失 | 先看条目自带的 `hint`：Python 可用 `pythonExecutable`、引导脚本或 `~/.local/bin` 任一路径解决；ffmpeg 按脚本打印的系统命令自行安装 |
 | 自检里 `runtime-dir` 缺失/降级 | 提示会点名引导脚本的绝对路径，按第 3 节执行；也可以把 `runtimeDir` 指到已有运行时（第 4 节） |
 | 自检里 `python` 显示 `user-bin` | 命中的是 `~/.local/bin` 下的解释器（不在 `PATH` 上）；只要版本够用就是正常结果 |
+| 面板看着是新的，接口却回「未知接口：POST …」 | 客户端 bundle 刷新页面即生效，宿主代码只在 DSH 进程启动时 import 一次 → **重启 DSH 进程**后重试（错误文案里也会写明这一步） |
+| 自检里 `publish-deps` 缺失/降级 | 缺 `playwright` 会连扫码登录一起失效（六个平台的登录脚本都 import 它）→ 按条目 hint 用清华镜像补 `--groups core,publish`；只缺 `biliup` 是降级，B 站上传改用官方 release 二进制放进 `~/.local/bin` 即可 |
+| 点「预检」只看到一行命令，没看到文章 | 「预检」只拼命令并跑内容门禁，不渲染产物；选中文件后用表单里的「预览选中的文件」在新窗口打开（走宿主 `GET /files?path=…`，按扩展名内联返回） |
 | 技能目录里没有 Easel 技能 | 确认 `dsh-skill-filesystem` 已启用且 `skillDirs` 指向 `<easelRoot>/skills/openclaw` |
 | 写画像/产物报 `upstream-read-only` | 目标落在 `skills/` 下；这是设计行为，换到 `profiles/` 或 `outputs/` |
 | 写文件报 `not-configured` | 没定位到 Easel 数据根：设 `easelRoot` 指向含 `skills/` 与 `pyproject.toml` 的目录 |

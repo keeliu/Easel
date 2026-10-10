@@ -16,6 +16,7 @@
 import { appendFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { ERROR_CODES, EaselError, ensure } from "./errors.js";
+import { browserEnv } from "./browser-deps.js";
 import { renderCommand, runCommand } from "./exec.js";
 import { PLATFORMS, buildPublishArgv, platformOf } from "./scripts.js";
 
@@ -300,6 +301,7 @@ export function createPublishService(deps) {
         argv: built.argv,
         cwd: runtime.easelRoot,
         timeoutMs: runtime.publishTimeoutMs,
+        env: browserEnv(runtime.runtimeDir),
       });
       const ok = result.exitCode === 0;
       const at = new Date().toISOString().replace("T", " ").slice(0, 19);

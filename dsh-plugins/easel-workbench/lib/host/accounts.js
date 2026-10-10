@@ -15,6 +15,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { ERROR_CODES, EaselError } from "./errors.js";
+import { browserEnv } from "./browser-deps.js";
 import { renderCommand, runCommand, startCommand } from "./exec.js";
 import { ACCOUNT_STATS, SHARED_SCRIPTS_DIR, scriptPath } from "./scripts.js";
 
@@ -532,6 +533,7 @@ export function createAccountsService(deps) {
         argv,
         cwd: runtime.easelRoot,
         timeoutMs: runtime.publishTimeoutMs,
+        env: browserEnv(runtime.runtimeDir),
       });
       const parsed = extractJson(result.stdout);
       const loggedIn = typeof parsed?.loggedIn === "boolean"
@@ -611,7 +613,12 @@ export function createAccountsService(deps) {
         repoRoot: runtime.easelRoot,
         loginStateDir: runtime.loginStateDir,
       });
-      const started = startCommand(subprocess, { argv, cwd: runtime.easelRoot, maxBytes: 128 * 1024 });
+      const started = startCommand(subprocess, {
+        argv,
+        cwd: runtime.easelRoot,
+        maxBytes: 128 * 1024,
+        env: browserEnv(runtime.runtimeDir),
+      });
       const job = { argv, startedAt: Date.now(), finished: false, exitCode: null, tail: "", handle: started };
       loginJobs.set(platform.id, job);
 
@@ -709,6 +716,7 @@ export function createAccountsService(deps) {
         argv,
         cwd: runtime.easelRoot,
         timeoutMs: runtime.publishTimeoutMs,
+        env: browserEnv(runtime.runtimeDir),
       });
       const parsed = extractJson(result.stdout);
       if (result.exitCode !== 0 || parsed === undefined) {

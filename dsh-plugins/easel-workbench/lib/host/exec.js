@@ -36,6 +36,7 @@ export function readCollected(reader) {
  *   maxBytes?: number,
  *   graceMs?: number,
  *   signal?: AbortSignal,
+ *   env?: Record<string, string>,
  * }} spec
  * @returns {Promise<{
  *   argv: string[], cwd: string, exitCode: number | null, signal: string | null,
@@ -51,6 +52,7 @@ export async function runCommand(subprocess, spec) {
     maxBytes = DEFAULT_MAX_BYTES,
     graceMs = DEFAULT_GRACE_MS,
     signal,
+    env,
   } = spec;
 
   // 允许传入「解析器」而不是服务对象：宿主服务是异步装配的，插件挂载时
@@ -82,6 +84,7 @@ export async function runCommand(subprocess, spec) {
         stdio: { stdin: "ignore", stdout: { maxBytes }, stderr: { maxBytes } },
         graceMs,
         signal: controller.signal,
+        ...(env === undefined ? {} : { env }),
       });
     } catch (error) {
       throw new EaselError(
@@ -132,7 +135,8 @@ export async function runCommand(subprocess, spec) {
  * 拒绝在无人 await 时变成 unhandled rejection。
  *
  * @param {object | (() => object | undefined)} subprocess 同 {@link runCommand}
- * @param {{ argv: readonly string[], cwd: string, maxBytes?: number, graceMs?: number }} spec
+ * @param {{ argv: readonly string[], cwd: string, maxBytes?: number, graceMs?: number,
+ *   env?: Record<string, string> }} spec
  * @returns {{
  *   argv: string[], cwd: string, handle: object,
  *   done: Promise<{ ok: boolean, exitCode: number | null, signal: string | null, error: unknown }>,
@@ -141,7 +145,7 @@ export async function runCommand(subprocess, spec) {
  * }}
  */
 export function startCommand(subprocess, spec) {
-  const { argv, cwd, maxBytes = DEFAULT_MAX_BYTES, graceMs = DEFAULT_GRACE_MS } = spec;
+  const { argv, cwd, maxBytes = DEFAULT_MAX_BYTES, graceMs = DEFAULT_GRACE_MS, env } = spec;
   const service = typeof subprocess === "function" ? subprocess() : subprocess;
 
   if (service === undefined || service === null) {
@@ -159,6 +163,7 @@ export function startCommand(subprocess, spec) {
       stdio: { stdin: "ignore", stdout: { maxBytes }, stderr: { maxBytes } },
       graceMs,
       signal: controller.signal,
+      ...(env === undefined ? {} : { env }),
     });
   } catch (error) {
     throw new EaselError(

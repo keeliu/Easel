@@ -70,15 +70,33 @@ function probeOf({ pythonOk = false, ffmpegOk = false } = {}) {
   });
 }
 
-async function runSelfcheck(dir, { probe, runtime, paths, probePackages } = {}) {
+async function runSelfcheck(dir, { probe, runtime, paths, probePackages, probeBrowser } = {}) {
   const service = createSelfcheckService({
     ctx: { get: () => undefined },
     runtime: runtime ?? runtimeFor(dir),
     paths: paths ?? fakePaths(),
     probe: probe ?? probeOf(),
     ...(probePackages === undefined ? {} : { probePackages }),
+    // 默认不碰真实文件系统里的浏览器缓存：单测要确定，探测结果由用例注入。
+    probeBrowser: probeBrowser ?? browserOf(),
   });
   return service.run();
+}
+
+/** 浏览器探测替身：默认「内核能启动」。 */
+function browserOf(
+  { binary = "/opt/ms-playwright/chromium-1/chrome-linux64/chrome", launched = true, exitCode = 0, version = "148.0.7778.96", output = "" } = {},
+) {
+  const resolved = launched === false && binary === null ? null : binary;
+  return async () => ({
+    binary: resolved,
+    launched,
+    exitCode: launched ? 0 : exitCode,
+    version: launched ? version : null,
+    output,
+    reason: launched ? "ok" : resolved === null ? "no-binary" : "exit-nonzero",
+    env: {},
+  });
 }
 
 /** 发布/登录依赖探测替身：默认「全都在」。 */
@@ -251,5 +269,61 @@ describe("自检条目的可操作性", () => {
     assert.equal(entry.status, "missing");
     assert.match(entry.detail, /未解析到 Python 运行时/);
     assert.match(entry.hint, /Python 运行时/);
+  });
+
+  it("浏览器内核真的能启动时报 ok：写出内核路径与版本，且不带 hint", async () => {
+    const dir = await makeScratch();
+    const result = await runSelfcheck(dir, {
+      probe: probeOf({ pythonOk: true, ffmpegOk: true }),
+      probeBrowser: browserOf({ binary: "/opt/pw/chromium/chrome", version: "148.0.7778.96" }),
+    });
+
+    const entry = result.entries.find((item) => item.id === "browser-launch");
+    assert.equal(entry.status, "ok");
+    assert.equal(entry.hint, null);
+    assert.equal(entry.path, "/opt/pw/chromium/chrome");
+    assert.equal(entry.version, "148.0.7778.96");
+    assert.match(entry.detail, /148\.0\.7778\.96/);
+    assert.ok(!result.missing.includes("browser-launch"));
+  });
+
+  it("内核存在但秒退时报 degraded，把退出码与输出摊开并指向免 root 补库脚本", async () => {
+    const dir = await makeScratch();
+    // 解包目录存在时，detail 要说清共享库是从哪来的。
+    await mkdir(join(dir, ".runtime", "chromium-deps", "root", "lib"), { recursive: true });
+    const result = await runSelfcheck(dir, {
+      probe: probeOf({ pythonOk: true, ffmpegOk: true }),
+      probeBrowser: browserOf({
+        launched: false,
+        exitCode: 127,
+        output: "error while loading shared libraries: libglib-2.0.so.0",
+      }),
+    });
+
+    const entry = result.entries.find((item) => item.id === "browser-launch");
+    assert.equal(entry.status, "degraded");
+    assert.match(entry.detail, /127/);
+    assert.match(entry.detail, /libglib-2\.0\.so\.0/);
+    assert.match(entry.hint, /install-browser-deps\.mjs/);
+    assert.match(entry.hint, /chromium-deps/);
+    assert.match(entry.hint, /--check/);
+    // 只有内核这一项降级：其余依赖仍然自洽。
+    assert.ok(result.degraded.includes("browser-launch"));
+  });
+
+  it("找不到内核时报 missing，并给出装 playwright 内核的那条命令", async () => {
+    const dir = await makeScratch();
+    const result = await runSelfcheck(dir, {
+      probe: probeOf({ pythonOk: true, ffmpegOk: true }),
+      probeBrowser: browserOf({ binary: null, launched: false }),
+    });
+
+    const entry = result.entries.find((item) => item.id === "browser-launch");
+    assert.equal(entry.status, "missing");
+    assert.equal(entry.path, null);
+    assert.match(entry.detail, /没有找到 Chromium 内核/);
+    assert.match(entry.hint, /bootstrap-runtime\.sh/);
+    assert.match(entry.hint, /playwright install chromium/);
+    assert.ok(result.missing.includes("browser-launch"));
   });
 });

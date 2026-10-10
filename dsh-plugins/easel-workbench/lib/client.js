@@ -73,11 +73,13 @@ window.__ModuleLoader__.load({
       "dispatch.submit": "派发",
       "dispatch.target": "投递到",
       "error.hostNotMounted": "宿主服务未挂载：请重载或重启 DSH 后重试。",
+      "error.hostStale": "（宿主插件还是旧版：刷新页面只换界面，请重启 DSH 进程后重试。）",
       "library.download": "下载",
       "library.emptyFiles": "这个主题下还没有产物：在「选题」里派发任务，或让会话把结果写进 outputs/<主题>/。",
       "library.emptyHint": "内容库列出 outputs/<主题>/ 下的产物；把一条选题派发到会话并产出后，就会出现在这里。",
       "library.pickProject": "在左侧选一个主题，查看它下面的文件。",
       "login.cancel": "取消登录",
+      "login.logSummary": "脚本原始输出（排查用）",
       "login.note": "二维码由仓库里既有的登录脚本产出、由你自己扫；插件不读取也不保存任何凭据。",
       "login.open": "扫码登录",
       "login.qrAlt": "登录二维码",
@@ -129,13 +131,14 @@ window.__ModuleLoader__.load({
       "publish.guardClear": "内容门禁通过。",
       "publish.history": "发布记录",
       "publish.mediaFile": "素材文件",
+      "publish.openFile": "预览选中的文件",
       "publish.pickFileOption": "选择文件（可选）",
       "publish.pickPlatform": "请先选择平台。",
       "publish.pickPlatformOption": "选择平台",
       "publish.pickTopicOption": "选择主题（可选）",
       "publish.platform": "平台",
       "publish.platforms": "发布平台",
-      "publish.preview": "预览",
+      "publish.preview": "预检（不发布）",
       "publish.success": "成功",
       "publish.tags": "标签",
       "publish.tagsPlaceholder": "逗号分隔，例如 AI,笔记",
@@ -268,11 +271,13 @@ window.__ModuleLoader__.load({
       "dispatch.submit": "Dispatch",
       "dispatch.target": "Deliver to",
       "error.hostNotMounted": "Host service is not mounted: reload or restart DSH, then retry.",
+      "error.hostStale": " (The host plugin is still the old build: a page refresh only swaps the UI, restart the DSH process and retry.)",
       "library.download": "Download",
       "library.emptyFiles": "No artifacts under this topic yet: dispatch a task from Topics, or have a session write results into outputs/<topic>/.",
       "library.emptyHint": "The library lists artifacts under outputs/<topic>/; dispatch a topic to a session and they will show up here.",
       "library.pickProject": "Pick a topic on the left to see its files.",
       "login.cancel": "Cancel sign-in",
+      "login.logSummary": "Raw script output (for troubleshooting)",
       "login.note": "The QR code comes from the existing scripts in the repo and only you scan it; the plugin never reads or stores your credentials.",
       "login.open": "QR sign-in",
       "login.qrAlt": "Sign-in QR code",
@@ -324,13 +329,14 @@ window.__ModuleLoader__.load({
       "publish.guardClear": "Content guard passed.",
       "publish.history": "Publish history",
       "publish.mediaFile": "Asset file",
+      "publish.openFile": "Preview selected file",
       "publish.pickFileOption": "Choose a file (optional)",
       "publish.pickPlatform": "Choose a platform first.",
       "publish.pickPlatformOption": "Choose a platform",
       "publish.pickTopicOption": "Choose a project (optional)",
       "publish.platform": "Platform",
       "publish.platforms": "Publish platforms",
-      "publish.preview": "Preview",
+      "publish.preview": "Pre-check (no publish)",
       "publish.success": "Success",
       "publish.tags": "Tags",
       "publish.tagsPlaceholder": "Comma separated, e.g. AI,notes",
@@ -494,6 +500,9 @@ window.__ModuleLoader__.load({
       ".easel-boundary-title{margin:0;font-weight:600}",
       ".easel-boundary-detail{margin:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}",
       ".easel-error-text{margin:0;color:var(--dsw-alias-state-error-primary)}",
+      ".easel-log-details{margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}",
+      ".easel-log-details>summary{cursor:pointer}",
+      ".easel-log{margin:6px 0 0;padding:8px;max-height:200px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--dsw-alias-bg-elevated);border-radius:var(--dsw-radius-sm);font-size:12px}",
       ".easel-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:13px}",
       ".easel-empty{display:flex;flex-direction:column;gap:4px}",
       ".easel-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}",
@@ -509,6 +518,8 @@ window.__ModuleLoader__.load({
       ".easel-qr{width:200px;height:200px;image-rendering:pixelated;align-self:flex-start;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}",
       ".easel-check{display:flex;flex-direction:row;align-items:center;gap:6px}",
       ".easel-preview{display:flex;flex-direction:column;gap:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);padding:8px 10px;background:var(--dsw-alias-bg-layer-1)}",
+      // 超长路径（venv 绝对路径 + 中文产物名）必须能折行，否则命令会把预览框撑破。
+      ".easel-preview p{word-break:break-all;white-space:pre-wrap}",
     ].join("");
 
     // ------------------------------------------------------------------ 工具
@@ -611,17 +622,29 @@ window.__ModuleLoader__.load({
             .then(function (payload) {
               if (payload !== null && payload.ok === true) return payload;
               var hostNotMounted = payload === null && response.status === 404;
+              // 宿主自己答的 404（`未知接口：…`）：跑在 DSH 进程里的宿主半边还是旧版。
+              // 页面刷新只换界面，宿主代码要重启 DSH 进程才会重新 import，所以把
+              // 「怎么修」直接写进错误文案（design D26）。
+              var hostStale =
+                payload !== null &&
+                payload.code === "not-found" &&
+                typeof payload.message === "string" &&
+                payload.message.indexOf("未知接口") >= 0;
               var message = hostNotMounted
                 ? tr("error.hostNotMounted")
-                : payload !== null && typeof payload.message === "string" && payload.message !== ""
-                  ? payload.message
-                  : "HTTP " + String(response.status);
+                : hostStale
+                  ? payload.message + " " + tr("error.hostStale")
+                  : payload !== null && typeof payload.message === "string" && payload.message !== ""
+                    ? payload.message
+                    : "HTTP " + String(response.status);
               var error = new Error(message);
               error.code = hostNotMounted
                 ? "host-not-mounted"
-                : payload !== null && typeof payload.code === "string"
-                  ? payload.code
-                  : "http-" + String(response.status);
+                : hostStale
+                  ? "host-stale"
+                  : payload !== null && typeof payload.code === "string"
+                    ? payload.code
+                    : "http-" + String(response.status);
               throw error;
             });
         });
@@ -966,6 +989,11 @@ window.__ModuleLoader__.load({
       var state = view.state;
       var rawState = state === null || state === undefined ? "" : String(state.rawState || "");
       var running = view.phase === "running";
+      // 脚本自己写的状态文案往往只有一句「浏览器没能打开」——真正的原因（缺系统库、
+      // 代理不通、风控）只在它的输出里。末尾这段原始输出是用户唯一能自查的线索，
+      // 所以失败时就地摊开，而不是让用户去翻 DSH 日志。
+      var logTail = state !== null && state !== undefined && typeof state.logTail === "string" ? state.logTail : "";
+      var showLog = logTail !== "" && (rawState === "error" || view.error !== "");
       return h(
         "div",
         { className: "easel-login", "data-easel-login": String(platform) },
@@ -979,6 +1007,14 @@ window.__ModuleLoader__.load({
         ),
         view.error !== ""
           ? h("p", { className: "easel-error-text", "data-easel-login-error": "" }, view.error)
+          : null,
+        showLog
+          ? h(
+              "details",
+              { className: "easel-log-details", "data-easel-login-log": String(platform) },
+              h("summary", null, t("login.logSummary")),
+              h("pre", { className: "easel-log" }, logTail),
+            )
           : null,
         state !== null && state !== undefined && state.qrReady === true
           ? h("img", {
@@ -1503,6 +1539,31 @@ window.__ModuleLoader__.load({
         return { input: input, article: article };
       }
 
+      /** 选中产物相对数据根的路径：发布入参与面板内预览共用同一条路径。 */
+      function selectedPath() {
+        return form.topic === "" || form.file === "" ? "" : "outputs/" + form.topic + "/" + form.file;
+      }
+
+      /**
+       * 预览选中的产物：走宿主的 `/files`（不带 `download=1`），
+       * 宿主按扩展名给 content-type，浏览器直接渲染文章/图片/视频。
+       */
+      function openFileLink(marker) {
+        var path = selectedPath();
+        if (path === "" || typeof props.apiBase !== "string") return null;
+        return h(
+          "a",
+          {
+            className: "easel-button",
+            "data-easel-publish-open": marker,
+            href: props.apiBase + "/files?path=" + encodeURIComponent(path),
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+          t("publish.openFile"),
+        );
+      }
+
       function post(path, input) {
         return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
       }
@@ -1595,6 +1656,7 @@ window.__ModuleLoader__.load({
             }),
           ),
         ),
+        selectedPath() === "" ? null : h("div", { className: "easel-actions" }, openFileLink("selected")),
         h(
           "label",
           { className: "easel-field" },
@@ -1637,6 +1699,7 @@ window.__ModuleLoader__.load({
               (Array.isArray(run.preview.warnings) ? run.preview.warnings : []).map(function (warning, index) {
                 return h("p", { className: "easel-hint", key: "warn-" + String(index) }, String(warning));
               }),
+              selectedPath() === "" ? null : h("div", { className: "easel-actions" }, openFileLink("preview")),
             )
           : null,
         run.phase === "done"
@@ -1672,6 +1735,7 @@ window.__ModuleLoader__.load({
           h(PublishForm, {
             t: t,
             api: props.api,
+            apiBase: props.apiBase,
             onPublished: function () {
               history.reload();
             },

@@ -14,6 +14,7 @@
 
 import { stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
+import { browserDepsPrefix, browserDepsInstalled, probeChromium } from "./browser-deps.js";
 import { UPSTREAM_READ_ONLY_PREFIXES } from "./config.js";
 import { PUBLISH_PACKAGE_NAMES, probePythonPackages, probeRuntime } from "./runtime.js";
 import { serviceOf } from "./services.js";
@@ -49,10 +50,18 @@ async function directoryInfo(absolute) {
  *   paths: Record<string, any>,
  *   probe?: Function,
  *   probePackages?: Function,
+ *   probeBrowser?: Function,
  * }} deps
  */
 export function createSelfcheckService(deps) {
-  const { ctx, runtime, paths, probe = probeRuntime, probePackages = probePythonPackages } = deps;
+  const {
+    ctx,
+    runtime,
+    paths,
+    probe = probeRuntime,
+    probePackages = probePythonPackages,
+    probeBrowser = probeChromium,
+  } = deps;
 
   return {
     /**
@@ -154,6 +163,50 @@ export function createSelfcheckService(deps) {
               : status === "missing"
                 ? `运行 ${bootstrap} --groups core,publish 补齐（网络慢时给 pip 指定镜像，例如 PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple）；playwright 还需要浏览器内核，若 ~/.cache/ms-playwright 下已有 chromium 就无需再装。`
                 : `运行 ${bootstrap} --groups core,publish 可补齐这些包；其中 B 站上传用的是 biliup 命令行，直接下载官方 release 的二进制放进 PATH 或 ~/.local/bin 同样可用（其余平台不受影响）。`,
+      });
+
+      // 「playwright 能 import」不等于「浏览器能启动」：精简发行版里内核依赖的系统
+      // 共享库是另一件事，缺了它脚本照样起得来、浏览器却秒退。这一项真的启动一次内核。
+      const depsPrefix = browserDepsPrefix(runtime.runtimeDir);
+      const depsInstalled = browserDepsInstalled(depsPrefix);
+      const browser = await probeBrowser(subprocess, {
+        runtimeDir: runtime.runtimeDir,
+        cwd: runtime.easelRoot ?? process.cwd(),
+      }).catch((error) => ({
+        binary: null,
+        launched: false,
+        exitCode: null,
+        version: null,
+        output: String(error?.message ?? error),
+        reason: "probe-failed",
+        env: {},
+      }));
+      const browserScript = join(runtime.packageRoot ?? ".", "scripts", "install-browser-deps.mjs");
+      const browserStatus = browser.launched ? "ok" : browser.binary === null ? "missing" : "degraded";
+      entries.push({
+        id: "browser-launch",
+        label: "浏览器内核（扫码登录用）",
+        status: browserStatus,
+        path: browser.binary,
+        version: browser.version,
+        exitCode: browser.exitCode,
+        libraryPath: browser.env?.LD_LIBRARY_PATH ?? "",
+        detail:
+          browserStatus === "ok"
+            ? `真的启动了一次内核：Chromium ${browser.version ?? "(版本未识别)"} 可执行（${browser.binary}）。${
+                depsInstalled ? `共享库来自免 root 解包目录：${depsPrefix}。` : ""
+              }`
+            : browserStatus === "missing"
+              ? "没有找到 Chromium 内核；点「扫码登录」或需要浏览器的发布会直接失败。"
+              : `找到内核（${browser.binary}）但它启动失败（退出码 ${String(browser.exitCode)}）：${
+                  browser.output === "" ? "没有任何输出。" : browser.output
+                } 常见原因是精简发行版缺 Chromium 依赖的系统共享库（免 root 也能补齐）。`,
+        hint:
+          browserStatus === "ok"
+            ? null
+            : browserStatus === "missing"
+              ? `运行 ${bootstrap} --groups core,publish 装上 playwright 与内核（playwright install chromium）。`
+              : `在非 root 环境运行 \`node ${browserScript}\`：它先报告缺哪些系统库，再把这些库下载解包到 ${depsPrefix}，宿主进程会自动把它们接进登录/发布子进程的 LD_LIBRARY_PATH。加 --check 可只看诊断、不下载。`,
       });
 
       const easelRoot = runtime.easelRoot;

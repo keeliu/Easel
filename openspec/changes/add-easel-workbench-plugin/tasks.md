@@ -116,14 +116,18 @@
 - [x] 13.5 热点来源可选并可沉淀为选题：热点区加来源多选（六个源），选择结果以 `?ids=` 传宿主（全选或全不选时省略参数）；每条线索可「存为选题」（`POST /topics`，来源标记为热点）并就地回报；抓取失败的来源照实呈现。验证方式：`node --test test/client.test.mjs` 的「热点：可选来源用 ?ids= 传给宿主，线索能存进选题库」用例；**实测结论**：通过
 - [x] 13.6 刷新不得重建子树（真实缺陷）：`useResource` 重取时保留上一份数据、`Resource` 只在没有数据时显示 Loading、画像与主题详情加 `key`。修前实测：登录成功后列表刷新 → 子树卸载重建 → 登录面板重挂又报成功 → 再刷新，6 秒内 `/login/status` 被请求 400+ 次、React 警告刷出 22 万行、测试进程跑死。验证方式：`node --test test/client.test.mjs` 3.0 秒跑完 18 项、日志里 0 条 act 警告；**实测结论**：通过（修复前同一条用例 20 秒超时）
 - [x] 13.7 发布与登录依赖自检（真实缺口）：该 venv 是用 `--groups core` 建的，而六个平台的登录脚本都 `import playwright`，于是「解释器 ok」并不等于「能扫码登录」——面板只会弹脚本原样的 `ModuleNotFoundError`。新增 `lib/host/runtime.js` 的 `probePythonPackages()`（用 `importlib.util.find_spec` 逐包查询，不真正 import）与 `lib/host/selfcheck.js` 的 `publish-deps` 条目：缺 `playwright` 报 `missing`，只缺 `biliup`/`requests`/`beautifulsoup4` 报 `degraded`（只影响 B 站上传与资讯类技能），没有解释器时指向 Python 那一条且不发注定失败的探测。验证方式：`node --test test/selfcheck.test.mjs`（9 例）与 `node --test test/runtime.test.mjs`（28 例）；**实测结论**：通过；本机用镜像补齐了 `playwright==1.60.0`（`~/.cache/ms-playwright` 里已有 `chromium-1223`，与 1.60.0 期望的可执行路径一致）、`requests`、`urllib3`、`beautifulsoup4`，`biliup` 在 sdist 元数据阶段挂死（`pip` 长时间停在 `Preparing metadata`）故保持 `degraded`
+- [x] 13.9 产物可直接预览 + 宿主未重载可自解释（真实反馈）：发布表单在选中产物后给出指向宿主 `GET /files?path=…`（不带 `download=1`）的链接，浏览器内联渲染文章/图片/视频；预检按钮文案改为「预检（不发布）」；`createApi` 把宿主答的路由级 404（`code:"not-found"` + 「未知接口」）认成 `host-stale`，保留原文并追加「重启 DSH 进程后重试」。验证方式：`node --test test/client.test.mjs` 的「发布：…」用例新增 `[data-easel-publish-open]` 断言（href 为 `/easel-workbench/api/files?path=outputs/秋季护肤/note.md`、`target=_blank`、预检结果里也有该入口）与新增用例「宿主还是旧版（未知接口 404）时，错误文案要给出「重启 DSH」这一步」；**实测结论**：客户端 21/21、全量 322/322 通过；活实例上 `GET /files?path=outputs/DSH插件/dsh-context-公众号排版.html` 实测 200 + `text/html` + 15557 字节（文章可直接渲染），而 `POST /accounts/xiaohongshu/login` 仍是 404——即该提示对应的是真实存在的宿主旧版状态
+- [x] 13.10 宿主重启说明（用户侧动作，非代码）：面板能自解释之后，仍需用户重启 DSH 进程才能让宿主半边生效；本条不产出代码，只把结论写进 `dsh-plugins/README.md` 与本 change 的验收清单。**实测结论**：DSH 主进程（pid 23）启动时刻早于本轮提交 37.7 分钟，页面刷新只换客户端
 - [x] 13.8 面板内登记与删除排期（真实缺口）：排期列表只认标题带 `Easel｜` 前缀的条目（`lib/host/schedule.js:isEaselSchedule`），而 DSH 自己的排期界面建出来的条目不带这个前缀——于是日历区**永远**不会有内容，空态指引里的「登记排期」也没有可点的地方。宿主 `POST /schedule`/`DELETE /schedule/:id` 早就在（`lib/host/web.js:339-340`），缺的仍是入口。日历区新增 `ScheduleForm`（主题、任务目标、期望产物三项必填 + 投递会话 + 每天/每周/只一次 + 时区，时区默认取浏览器 `Intl` 值、取不到才回落 `Asia/Shanghai`），列表行加删除按钮（只在条目带 `sessionId` 时渲染，宿主 `remove` 要求 `id` 与 `sessionId` 同时到位）。验证方式：`node --test test/client.test.mjs` 的「登记排期：必填项本地就拦下，定时字段按 DSH 的形状原样透传」（断言缺项时零请求、`daily`/`weekly`/`at` 三种形状的请求体、成功后刷新列表）与「排期条目可以删除，没有会话绑定的条目不显示删除按钮」；**实测结论**：20/20 通过（客户端），全量 321/321
+- [x] 13.11 免 root 补齐 Chromium 系统共享库，并把它接进子进程（真实缺陷）：本机 `ldd` playwright 下载的 chromium 得到 **24 个 `=> not found`**（首个 `libglib-2.0.so.0`），内核直接执行 `exitCode 127`，脚本把这一切折叠成「浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。」——**这句话无法行动**。上游只做 `playwright install chromium`（不装系统库），官方 `install-deps` 要 root。新增 `scripts/install-browser-deps.mjs`（零依赖 Node ESM）：缺失 soname → `SONAME_PACKAGES` 映射 Debian 包 → 拉镜像 `Packages.gz` 索引 → 递归 `Depends` 闭包 → 下载 `.deb` → `dpkg-deb -x` 解到 `<runtimeDir>/chromium-deps/root`，写出 `installed.json`／`env.sh`，**不改系统目录、不需要 root**；新增 `lib/host/browser-deps.js` 只产出 `LD_LIBRARY_PATH` 覆盖，`lib/host/exec.js` 把 `spec.env` 透传给 `subprocess.spawn`（`runCommand` 与 `startCommand` 两处），登录/`whoami`/账号数据/发布四条链路各注入一次；非 Linux 返回空对象。验证方式：`node --test test/browser-deps.test.mjs`（11 例：路径只认真实目录、原有 `LD_LIBRARY_PATH` 保留在后、内核定位优先级、真探测用退出码判定、缺库 127 不谎报成功、spawn 抛错被折叠、接线防回归）。**实测结论**：11/11 通过；真机跑一次安装解出 **82 个包**，带注入环境执行内核 `--version` → `Chromium 148.0.7778.96`
+- [x] 13.12 自检新增「浏览器内核」条目 + 面板摊开脚本输出（真实反馈）：`lib/host/browser-deps.js` 的 `probeChromium()` **真的启动一次内核**（`--version`），状态只看退出码——「包可导入」「文件存在」都不算；`lib/host/selfcheck.js` 新增 `browser-launch` 条目（找不到内核 → `missing`；内核在但秒退 → `degraded` 并带出退出码与输出尾部；能启动 → `ok` 并写出版本与内核路径），`hint` 指向免 root 补库脚本并说明 `--check` 可只看诊断。登录脚本自报的状态往往只有一句话，而 `loginStatus` 早已带 `logTail`（`stderr+stdout` 末 2000 字符）却从没被渲染过：`src/client.js` 在登录失败时就地渲染可折叠的 `<details data-easel-login-log>`，新增词条 `login.logSummary`。验证方式：`node --test test/selfcheck.test.mjs`（12 例）与 `node --test test/client.test.mjs` 的「脚本只留下一句「浏览器没能打开」时，面板要能就地摊开它的原始输出」用例。**实测结论**：自检 12/12、客户端 22/22 通过；真机探测回 `launched:true`、`148.0.7778.96`、注入路径以 `<插件>/.runtime/chromium-deps/root/usr/lib/x86_64-linux-gnu` 开头。**仍未解决且插件无法解决**：本机出口 IP 被小红书判为风险 IP（安全限制 `300012`），二维码在此环境无法弹出——脚本已给出两条出路（`--proxy socks5://…`，或在正常网络机器上登录后把 `~/.easel-browser-profiles/XiaohongshuProfile` 整个拷来复用），插件侧只保证把这类原始输出如实送到眼前
 
 ## 实现期记录（已完成部分的证据）
 
 实现与自动验证已全部落盘，命令均在 `/data/dsh/home/dsh-hub/Easel` 下执行：
 
-- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **321 项全绿**（`fail 0`；
-  早期记录为 277 项，§10–§13 的用例陆续补入后为 321）；
+- 全量测试：`cd dsh-plugins/easel-workbench && node --test test/*.test.mjs` → **322 项全绿**（`fail 0`；
+  早期记录为 277 项，§10–§13 的用例陆续补入后为 322）；
   客户端产物校验 `node scripts/build-client.mjs --check` 通过（重复构建哈希不变）。
 - 引导脚本实跑：脚本随包位于 `dsh-plugins/easel-workbench/scripts/bootstrap-runtime.sh`（位置无关，默认值由
   脚本自身位置推出：`--runtime-dir <包根>/.runtime`、`--easel-root <工作区>/_repo`，与进程工作目录无关）：
@@ -242,6 +246,28 @@
   用户都是永久空态。新增 `ScheduleForm`（主题/任务目标/期望产物必填、选投递会话、每天/每周/只一次、时区
   默认取浏览器）与列表行删除按钮（仅在有会话绑定时渲染），本地只校验必填项，时间与时区合法性交给 DSH。
   测试：`node --test test/client.test.mjs` → 20/20；全量 `node --test test/*.test.mjs` → **321 项全绿**。
+
+- **产物可直接预览 + 宿主未重载可自解释（2026-10-09，第 18 项实现期改进，见 design D26）**：用户反馈
+  「现在文章还不能预览，另外就是账号登录的时候接口报错了」，两件事都不是新功能缺失：前者是语义问题——
+  面板里的「预览」其实是**预检**（拼 argv + 跑内容门禁），它不会把文章摊给用户看，所以新增选中产物的
+  「预览选中的文件」链接（`GET /files?path=…`，不带 `download=1`，宿主按扩展名内联返回；实测
+  `outputs/DSH插件/dsh-context-公众号排版.html` → 200 + `text/html` + 15557 字节）并把预检按钮改名为
+  「预检（不发布）」；后者是**运行中的宿主还是旧版**（客户端 bundle 每次请求从磁盘读，宿主代码只在 DSH
+  进程启动时 import 一次）：实测 `POST /accounts/xiaohongshu/login` 404、`/selfcheck` 仍只有旧 10 条，
+  主进程启动时刻比探测早 37.7 分钟。代码侧把这种宿主自答的 `未知接口` 404 认成 `host-stale`，保留原文
+  并追加「请重启 DSH 进程后重试」，避免下次再让人对着「未知接口」猜。超长路径也会折行，不再撑破预览框。
+  测试：`node --test test/client.test.mjs` → 21/21；全量 `node --test test/*.test.mjs` → **322 项全绿**。
+
+- **登录链路的缺库收口（2026-10-10，第 19 项实现期改进，见 design D27）**：用户两张红框截图把问题钉在
+  「点登录只得到一句『浏览器没能打开』」。逐层实测后确认根因不在脚本、不在网络：内核依赖的系统共享库
+  缺 24 个（首个 `libglib-2.0.so.0`），内核 `exitCode 127`。三步收口：①`scripts/install-browser-deps.mjs`
+  免 root 解包（实测 82 个包，内核 `--version` → `148.0.7778.96`）；②`lib/host/browser-deps.js` +
+  `lib/host/exec.js` 的 `spec.env` 让登录/验证/账号数据/发布四类子进程拿到 `LD_LIBRARY_PATH`；
+  ③自检新增 `browser-launch`（真的启动一次）并把登录脚本输出尾巴摊到面板（`<details>` + `login.logSummary`）。
+  测试：`node --test test/browser-deps.test.mjs` → 11/11、`node --test test/selfcheck.test.mjs` → 12/12、
+  `node --test test/client.test.mjs` → 22/22；全量 `node --test test/*.test.mjs` → **337 项全绿**
+  （322 → 337：新增 11 + 3 + 1）。**插件之外仍开放**：出口 IP 的小红书风控 `300012` 需代理或导入既有
+  profile 目录（见 13.12），这是环境问题而不是插件缺陷——面板现在会把 `300012` 这类原文直接显示出来。
 
 ## 待用户验收（本机无法完成的部分）
 

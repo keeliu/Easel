@@ -193,6 +193,48 @@ React DOM 在**模块初始化**时就把 `canUseDOM` 烘死。jsdom 用例若�
 - **环境阻断（与插件无关，但决定了安装路径）**：① profile 级 pnpm 供应链策略校验**整份 lockfile**（559 条），既有的 `billion-context@0.1.189` 落在 `minimumReleaseAge`（cutoff = now − 24h）内 → `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`，该 24 小时窗口内任何安装都失败（`pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 未生效）；② `github:`/git 规格被 pnpm 解析为 `git+ssh://git@github.com/…`，而本机 ssh 读 `/home/node/.ssh`（不存在且父目录只读，`$HOME=/data/dsh/home` 被 ssh 忽略）→ `Host key verification failed`；③ 仓库约 323 MB，git 依赖会整仓克隆。
 - **失败表现**：客户端半边（面板与 10 个子导航）正常渲染，各子页显示 `错误信息: HTTP 404`；`curl http://127.0.0.1:3080/easel-workbench/api/config` → `HTTP 404`、`0B`（DSH 默认 404，而非插件 JSON 404）；`plugin_manager action=set_bundle` → `1 entry did not activate / easel-workbench (easel-workbench): failed to import`。
 
+### D26：产物预览走宿主的 `/files` 内联返回，宿主未重载就把「重启」写进错误文案
+
+面板里的「预览」是**预检**（拼 argv + 跑内容门禁），它回答「会不会被门禁拦住、将要执行什么命令」，
+不回答「文章长什么样」——用户点「预览」是想看文章，于是把预检当成了坏掉的预览。决定：
+
+- 选中产物后，发布表单直接给一个指向 `GET /files?path=<相对路径>`（**不带 `download=1`**）的链接，
+  宿主按扩展名给 `content-type`，浏览器自己渲染 HTML/图片/视频。MUST NOT 用 iframe，也 MUST NOT 把
+  未经处理的 HTML 注入面板：面板与宿主同源，样式与脚本都会串味（`specs/creator-workbench-ui/spec.md`
+  的「选中产物必须能直接查看」）。预检按钮文案改为「预检（不发布）」，与「看文章」区分开。
+- 客户端 bundle 每次请求从磁盘读（刷新页面即生效），而**宿主插件代码只在 DSH 进程启动时 import 一次**。
+  「装了新代码但没重启」的现象因此是：界面已经是新版、接口却回 `未知接口：POST …`（宿主自己答的 404，
+  `lib/host/web.js` 的 `handle()` 分支）。`createApi` 把这种 404 认成 `host-stale`，保留宿主原文并追加
+  本地化的「重启 DSH 进程」下一步，而不是让用户对着「未知接口」猜——实测该状态：`/accounts/:id/login`
+  404、`/selfcheck` 仍只有旧 10 条（无 `publish-deps`）、DSH 主进程启动时刻比探测早 37.7 分钟。
+
+### D27：缺共享库这件事，用「免 root 解包 + 真的启动一次 + 摊开脚本输出」三步收口
+
+小红书登录在本机的真实现象是：点「开始扫码登录」后，脚本回一句「浏览器没能打开。请关闭弹窗，等 10 秒再点登录，不要连点。」
+——**这句话无法行动**。逐层查下去（本机实测）：
+
+- `ldd` 该 Python 环境里 playwright 下载的 chromium：**24 个 `=> not found`**，第一个是 `libglib-2.0.so.0`；
+  直接执行内核得到 `exitCode 127`（动态链接阶段就死），脚本把它折叠成了上面那句状态。
+- 上游 `install_tool.py` 只做 `playwright install chromium`（**只装内核、不装内核依赖的系统库**）；
+  官方的 `playwright install-deps` 要 root 且写系统目录——本机非 root，这条路走不通。
+- 于是决定新增 `scripts/install-browser-deps.mjs`：`ldd` 取缺失 soname → 用 `SONAME_PACKAGES` 映射成
+  Debian 包名 → 拉取镜像的 `Packages.gz` 索引、递归解析 `Depends` 闭包 → 下载 `.deb` → `dpkg-deb -x`
+  解到 `<runtimeDir>/chromium-deps/root`，并写出 `installed.json`／`env.sh`。**不改系统目录、不需要 root。**
+  实测把 82 个包解出来后，带注入环境执行内核 `--version` 得到 `148.0.7778.96`。
+- 注入点收敛在一个模块：`lib/host/browser-deps.js` 的 `browserEnv(runtimeDir)` 只产出 `LD_LIBRARY_PATH`，
+  由 `lib/host/exec.js` 透传 `spec.env` 给 `subprocess.spawn`。只传这一个变量是安全的：DSH 侧
+  `childEnv(spec.env)` 的实现是 `{...scrubbedParentEnv(), ...extra}`，即**叠加**而不是替换；非 Linux 平台
+  直接返回空对象，不去猜别的平台的动态链接器。
+- 「能导入」不是判据：`probeChromium` **真的执行一次内核**（`--version`），状态只看退出码；自检新增
+  `browser-launch` 条目（内核缺失 → `missing`，内核在但秒退 → `degraded` 并带出退出码与输出尾部，
+  能启动 → `ok` 并写出版本与内核路径）。这样「浏览器能不能用」不再是只有跑一次登录才知道的事。
+- 共享库修好后仍有**插件修不了**的一层：本机出口 IP 被小红书判为风险 IP（安全限制 `300012`
+  「IP存在风险，请切换可靠网络环境」），二维码在此环境无法弹出。脚本已经给出了两条出路
+  （`--proxy socks5://…`，或在正常网络的机器上登录后把持久化目录整个拷来复用），所以插件这一侧的正确
+  做法不是假装成功，而是把**脚本的原始输出**送到用户眼前：登录状态本来就带 `logTail`（`stderr+stdout`
+  末 2000 字符），D27 之前客户端从不渲染它。现在失败时就地渲染一个可折叠的 `<details>`，
+  让「浏览器没能打开」旁边就有 `300012` 这类可搜索的证据。
+
 ## Risks / Trade-offs
 
 - **[`sidebar.panellist` 的像素位置未截图验证]**：位置结论来自 README 描述的渲染次序（品牌行 → New Session → panellist → 会话列表 → 设置行），未在真实界面上确认。→ 缓解：实现期第一件事是在本机 profile 装一个最小 bundle 只注册一个 panellist 条目，截图确认位置；若不满足需求，退路是改用 `sidebar.brand` 下方的自定义插槽或 `sidebar.workspaces` 之上的就近锚点（备选见 `EASEL-DSH-需求文档.md` F4.3）。
